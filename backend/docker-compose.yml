@@ -1,0 +1,27 @@
+version: "3.8"
+
+services:
+  # Isolated Redis instance for the WebSocket Architecture
+  redis:
+    image: redis:7-alpine
+    container_name: songspot-redis
+    restart: unless-stopped
+
+    # Loopback-only (Highly secure, prevents network exposure)
+    ports:
+      - "127.0.0.1:6380:6379"
+
+    command: redis-server --appendonly yes
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+    volumes:
+      - redis_data:/data
+
+# Named volume for Redis persistence
+volumes:
+  redis_data:
