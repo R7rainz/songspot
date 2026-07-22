@@ -43,6 +43,8 @@ func main() {
 		api.ServerWs(w, r, roomID, userID, rdb)
 	})
 
+	api.SetupRestRoutes(mux, rdb)
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
