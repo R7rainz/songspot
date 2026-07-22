@@ -4,7 +4,7 @@ type RoomState struct {
 	RoomID      string `json:"roomID"`
 	HostID      string `json:"hostID"`
 	CurrentSong string `json:"currentSong"`
-	IsPlaying   bool   `json:"IsPlaying"`
+	IsPlaying   bool   `json:"isPlaying"`
 	SyncTimeMs  int64  `json:"syncTimeMs"`
 	UpdatedAt   int64  `json:"updatedAt"`
 }
@@ -21,7 +21,7 @@ type QueueItem struct {
 	Votes int  `json:"votes"`
 }
 
-type RoomDate struct {
+type RoomData struct {
 	State RoomState   `json:"state"`
 	Queue []QueueItem `json:"queue"`
 	Users []string    `json:"users"`

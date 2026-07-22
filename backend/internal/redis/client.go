@@ -83,13 +83,13 @@ func (c *Client) UpdatePlaybackState(roomID, currentSong string, isPlaying bool,
 }
 
 // invites
-func (c *Client) CreateInvite(token, roomID, hostName string, maxUses string, expireMinutes int) error {
+func (c *Client) CreateInvite(token, roomID, hostName string, maxUses int, expireMinutes int) error {
 	key := fmt.Sprintf("invite:%s", token)
 
 	err := c.rdb.HSet(ctx, key, map[string]interface{}{
 		"room_id":   roomID,
 		"host_name": hostName,
-		"maxUses":   maxUses,
+		"max_uses":  maxUses,
 		"use_count": 0,
 	}).Err()
 	if err != nil {
@@ -102,12 +102,31 @@ func (c *Client) CreateInvite(token, roomID, hostName string, maxUses string, ex
 func (c *Client) UseInvite(token string) (string, error) {
 	key := fmt.Sprintf("invite:%s", token)
 
-	exist, _ := c.rdb.Exists(ctx, key).Result()
-	if exist == 0 {
+	exists, err := c.rdb.Exists(ctx, key).Result()
+	if err != nil {
+		return "", err
+	}
+	if exists == 0 {
 		return "", fmt.Errorf("invite expired or invalid")
 	}
 
-	maxUses, _ := c.rdb.HGet(ctx, key, "max_uses").Int()
+	maxUses, err := c.rdb.HGet(ctx, key, "max_uses").Int()
+	if err == redis.Nil {
+		maxUses = 0
+	} else if err != nil {
+		return "", err
+	}
+
+	useCount, err := c.rdb.HGet(ctx, key, "use_count").Int()
+	if err == redis.Nil {
+		useCount = 0
+	} else if err != nil {
+		return "", err
+	}
+
+	if maxUses > 0 && useCount >= maxUses {
+		return "", fmt.Errorf("invite use limit reached")
+	}
 
 	newCount, err := c.rdb.HIncrBy(ctx, key, "use_count", 1).Result()
 	if err != nil {

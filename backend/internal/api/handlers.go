@@ -3,7 +3,10 @@ package api
 import (
 	"log"
 	"net/http"
+	"net/url"
+	"os"
 	"songspot/internal/ws"
+	"strings"
 	"sync"
 
 	"github.com/gorilla/websocket"
@@ -15,8 +18,36 @@ var upgrader = websocket.Upgrader{
 	WriteBufferSize: 1024,
 
 	CheckOrigin: func(r *http.Request) bool {
-		return true
+		return isAllowedWebSocketOrigin(r)
 	},
+}
+
+func isAllowedWebSocketOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true
+	}
+
+	if allowedOrigins := os.Getenv("WS_ALLOWED_ORIGINS"); allowedOrigins != "" {
+		for _, allowedOrigin := range strings.Split(allowedOrigins, ",") {
+			if strings.TrimSpace(allowedOrigin) == origin {
+				return true
+			}
+		}
+		return false
+	}
+
+	parsedOrigin, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+
+	if strings.EqualFold(parsedOrigin.Host, r.Host) {
+		return true
+	}
+
+	originHost := parsedOrigin.Hostname()
+	return originHost == "localhost" || originHost == "127.0.0.1"
 }
 
 var (
