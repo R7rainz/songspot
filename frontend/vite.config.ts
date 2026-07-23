@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 
 // The Go backend does not send CORS headers yet, so in dev we proxy REST +
 // WebSocket traffic through Vite to sidestep cross-origin blocking entirely.
@@ -7,7 +8,7 @@ import react from "@vitejs/plugin-react";
 const BACKEND = process.env.BACKEND_URL || "http://localhost:8080";
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   server: {
     port: 5173,
     proxy: {
