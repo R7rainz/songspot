@@ -103,6 +103,12 @@ func (c *Client) ReadPump() {
 				continue
 			}
 
+			// Host-only playback: drop control events from non-hosts unless the
+			// host has handed control to everyone.
+			if !room.State.EveryoneControls && c.UserID != room.State.HostID {
+				continue
+			}
+
 			room.State.IsPlaying = event.Action == "play"
 			room.State.SyncTimeMs = int64(syncTimeMs)
 			room.State.UpdatedAt = time.Now().UnixMilli()

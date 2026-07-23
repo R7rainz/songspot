@@ -171,9 +171,13 @@ export function Room() {
     ? (songMeta.current[room.state.currentSong]?.title ?? "Now playing")
     : null;
 
+  // The host always controls playback; everyone else only when handed the mic.
+  const everyoneControls = room?.state.everyoneControls ?? false;
+  const canControl = isHost || everyoneControls;
+
   function togglePlay() {
     const p = playerRef.current;
-    if (!p) return;
+    if (!p || !canControl) return;
     const ms = Math.floor(p.getTime() * 1000);
     if (playing) {
       p.pause();
@@ -201,6 +205,7 @@ export function Room() {
   }
 
   function commitSeek(sec: number) {
+    if (!canControl) return;
     const p = playerRef.current;
     p?.seekTo(sec);
     setCurrent(sec);
@@ -210,9 +215,9 @@ export function Room() {
   }
 
   async function skipNext() {
-    if (queue.length === 0) return;
+    if (queue.length === 0 || !canControl) return;
     try {
-      await api.advanceQueue(roomID);
+      await api.advanceQueue(roomID, userId);
     } catch {
       // Queue emptied from under us (e.g. a peer skipped first) — the refetch
       // below reconciles to the real state either way.
@@ -231,12 +236,19 @@ export function Room() {
   }
 
   async function handlePlayNow(song: Song) {
+    if (!canControl) return;
     songMeta.current[song.id] = song;
-    await api.playNow(roomID, song);
+    await api.playNow(roomID, song, userId);
     // refetch() updates `room`, which the room-state effect turns into a
     // player.load(); notify peers so they refetch and load the new song too.
     await refetch();
     notifyQueueChanged();
+  }
+
+  async function handleToggleControl(next: boolean) {
+    await api.setControl(roomID, userId, next);
+    await refetch();
+    notifyQueueChanged(); // peers refetch and pick up the new permission
   }
 
   async function mutateQueue(fn: () => Promise<QueueItem[]>, id: string) {
@@ -327,14 +339,23 @@ export function Room() {
                 if (isHost && queue.length > 0) void skipNext();
               }}
               onUserPlay={(at) => {
+                if (!canControl) return;
                 setPlaying(true);
                 sendPlayback("play", Math.floor(at * 1000));
               }}
               onUserPause={(at) => {
+                if (!canControl) return;
                 setPlaying(false);
                 sendPlayback("pause", Math.floor(at * 1000));
               }}
             />
+            {/* Non-controllers can't click the video to pause it. */}
+            {hasSong && !canControl && (
+              <div
+                className="absolute inset-0 cursor-not-allowed"
+                title="The host controls playback"
+              />
+            )}
             {!hasSong && (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-gradient-to-b from-[#101219] to-[#0a0b0f] text-center">
                 <EqualizerMark size={40} />
@@ -358,7 +379,7 @@ export function Room() {
               <button
                 className="grid h-[46px] w-[46px] shrink-0 place-items-center rounded-full bg-accent text-[0.95rem] text-[#1a1206] transition hover:scale-105 hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-45"
                 onClick={togglePlay}
-                disabled={!hasSong}
+                disabled={!hasSong || !canControl}
                 aria-label={playing ? "Pause" : "Play"}
               >
                 {playing ? "❚❚" : "►"}
@@ -374,7 +395,7 @@ export function Room() {
                 max={Math.max(duration, 1)}
                 step={0.5}
                 value={Math.min(shownTime, duration || 0)}
-                disabled={!hasSong}
+                disabled={!hasSong || !canControl}
                 onChange={(e) => setScrubbing(Number(e.target.value))}
                 onMouseUp={(e) =>
                   commitSeek(Number((e.target as HTMLInputElement).value))
@@ -418,15 +439,51 @@ export function Room() {
                 />
               </div>
 
-              <button
-                className="btn shrink-0 !px-3.5 !py-2 text-[0.85rem]"
-                onClick={() => void skipNext()}
-                disabled={queue.length === 0}
-                title="Play the next song in the queue"
-              >
-                Next ▸
-              </button>
+              {canControl && (
+                <button
+                  className="btn shrink-0 !px-3.5 !py-2 text-[0.85rem]"
+                  onClick={() => void skipNext()}
+                  disabled={queue.length === 0}
+                  title="Play the next song in the queue"
+                >
+                  Next ▸
+                </button>
+              )}
             </div>
+
+            {isHost ? (
+              <div className="mt-3 flex items-center justify-between gap-3 border-t border-line-soft pt-3">
+                <span className="text-[0.85rem]">
+                  <span className="font-medium">Let everyone control playback</span>
+                  <span className="block text-[0.72rem] text-muted2">
+                    {everyoneControls
+                      ? "Anyone can play, pause, seek, and skip."
+                      : "Only you can play, pause, seek, and skip."}
+                  </span>
+                </span>
+                <button
+                  role="switch"
+                  aria-checked={everyoneControls}
+                  aria-label="Let everyone control playback"
+                  onClick={() => void handleToggleControl(!everyoneControls)}
+                  className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
+                    everyoneControls ? "bg-accent" : "bg-surface3"
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${
+                      everyoneControls ? "left-[22px]" : "left-0.5"
+                    }`}
+                  />
+                </button>
+              </div>
+            ) : (
+              <p className="mt-3 flex items-center gap-2 border-t border-line-soft pt-3 text-[0.8rem] text-muted2">
+                {everyoneControls
+                  ? "🎛 The host opened playback to everyone."
+                  : "🔒 The host controls playback — you can add songs and vote."}
+              </p>
+            )}
           </div>
         </section>
 
@@ -434,6 +491,7 @@ export function Room() {
           <div className="card">
             <AddSong
               roomID={roomID}
+              canPlayNow={canControl}
               onChanged={() => void onSongAdded()}
               onPlayNow={handlePlayNow}
             />

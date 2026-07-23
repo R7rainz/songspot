@@ -7,6 +7,10 @@ type RoomState struct {
 	IsPlaying   bool   `json:"isPlaying"`
 	SyncTimeMs  int64  `json:"syncTimeMs"`
 	UpdatedAt   int64  `json:"updatedAt"`
+	// EveryoneControls lets any participant drive playback (play/pause/seek/next
+	// and play-now). When false (default), only the host can. Everyone can
+	// always add songs and vote regardless.
+	EveryoneControls bool `json:"everyoneControls"`
 }
 
 type Song struct {
