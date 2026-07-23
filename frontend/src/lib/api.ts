@@ -75,8 +75,10 @@ export const api = {
       method: "DELETE",
     }),
 
+  // Advances the queue; the backend returns the new RoomState (not full
+  // RoomData), so callers should refetch the room after this.
   advanceQueue: (roomID: string) =>
-    request<RoomData>(`/rooms/${roomID}/queue/next`, { method: "POST" }),
+    request<RoomState>(`/rooms/${roomID}/queue/next`, { method: "POST" }),
 
   // Search YouTube in-app (keyless InnerTube, backed by the Go /search route).
   search: (query: string, limit = 15) =>

@@ -32,6 +32,15 @@ export function Room() {
   const [duration, setDuration] = useState(0);
   const [scrubbing, setScrubbing] = useState<number | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [playerReady, setPlayerReady] = useState(false);
+  // Volume is per-listener (local only, never broadcast) and remembered.
+  const [volume, setVolume] = useState(() => {
+    const v = Number(localStorage.getItem("songspot.volume"));
+    return Number.isFinite(v) && v > 0 ? Math.min(v, 100) : 80;
+  });
+  const [muted, setMuted] = useState(
+    () => localStorage.getItem("songspot.muted") === "1",
+  );
 
   // The queue drops a song once it becomes current, so keep a title lookup
   // around for the now-playing header.
@@ -133,16 +142,30 @@ export function Room() {
     if (room) syncPlayerToState(room);
   }, [room, syncPlayerToState]);
 
-  // Poll the player to drive the progress bar.
+  // Poll the player to drive the progress bar and keep the play/pause button in
+  // sync with what the player is *actually* doing (e.g. when the browser blocks
+  // autoplay after a refresh, so the UI shows Play instead of a stuck Pause).
   useEffect(() => {
     const t = setInterval(() => {
       const p = playerRef.current;
       if (!p) return;
       setDuration(p.getDuration());
       if (scrubbing === null) setCurrent(p.getTime());
+      const state = p.getState();
+      if (state === 1) setPlaying(true);
+      else if (state === 2 || state === 0) setPlaying(false);
     }, 500);
     return () => clearInterval(t);
   }, [scrubbing]);
+
+  // Apply per-listener volume/mute to the player and remember the choice.
+  useEffect(() => {
+    if (!playerReady) return;
+    playerRef.current?.setVolume(volume);
+    playerRef.current?.setMuted(muted);
+    localStorage.setItem("songspot.volume", String(volume));
+    localStorage.setItem("songspot.muted", muted ? "1" : "0");
+  }, [playerReady, volume, muted]);
 
   const currentTitle = room?.state.currentSong
     ? (songMeta.current[room.state.currentSong]?.title ?? "Now playing")
@@ -163,6 +186,20 @@ export function Room() {
     }
   }
 
+  function changeVolume(v: number) {
+    setVolume(v);
+    setMuted(v === 0);
+  }
+
+  function toggleMute() {
+    if (muted) {
+      setMuted(false);
+      if (volume === 0) setVolume(30);
+    } else {
+      setMuted(true);
+    }
+  }
+
   function commitSeek(sec: number) {
     const p = playerRef.current;
     p?.seekTo(sec);
@@ -173,11 +210,16 @@ export function Room() {
   }
 
   async function skipNext() {
-    const data = await api.advanceQueue(roomID);
-    const q = await api.getQueue(roomID).catch(() => data.queue);
-    rememberSongs(q);
-    setQueue(q);
-    setRoom(data);
+    if (queue.length === 0) return;
+    try {
+      await api.advanceQueue(roomID);
+    } catch {
+      // Queue emptied from under us (e.g. a peer skipped first) — the refetch
+      // below reconciles to the real state either way.
+    }
+    // advanceQueue returns only RoomState; refetch the full room so `room`,
+    // `queue`, and the player all move to the new current song together.
+    await refetch();
     notifyQueueChanged();
   }
 
@@ -277,7 +319,10 @@ export function Room() {
           <div className="relative aspect-video overflow-hidden rounded-[22px] border border-line bg-black shadow-[0_24px_60px_-28px_rgba(0,0,0,0.8)]">
             <YouTubePlayer
               ref={playerRef}
-              onReady={() => room && syncPlayerToState(room)}
+              onReady={() => {
+                setPlayerReady(true);
+                if (room) syncPlayerToState(room);
+              }}
               onEnded={() => {
                 if (isHost && queue.length > 0) void skipNext();
               }}
@@ -346,14 +391,40 @@ export function Room() {
               <span className="min-w-[42px] text-center font-mono text-[0.78rem] text-muted2">
                 {formatTime(duration)}
               </span>
+            </div>
+
+            <div className="mt-3 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <button
+                  className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-line bg-surface2 text-[0.9rem] transition-colors hover:bg-surface3"
+                  onClick={toggleMute}
+                  aria-label={muted ? "Unmute" : "Mute"}
+                  title={muted ? "Unmute" : "Mute"}
+                >
+                  {muted || volume === 0 ? "🔇" : volume < 50 ? "🔉" : "🔊"}
+                </button>
+                <input
+                  className="scrub !flex-none w-24"
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={muted ? 0 : volume}
+                  onChange={(e) => changeVolume(Number(e.target.value))}
+                  aria-label="Volume"
+                  style={
+                    { "--pct": `${muted ? 0 : volume}%` } as React.CSSProperties
+                  }
+                />
+              </div>
 
               <button
                 className="btn shrink-0 !px-3.5 !py-2 text-[0.85rem]"
                 onClick={() => void skipNext()}
                 disabled={queue.length === 0}
-                title="Skip to next"
+                title="Play the next song in the queue"
               >
-                Skip ▸
+                Next ▸
               </button>
             </div>
           </div>
