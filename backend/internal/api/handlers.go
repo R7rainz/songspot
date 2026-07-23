@@ -10,11 +10,13 @@ import (
 	"net/url"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"songspot/internal/models"
+	"songspot/internal/music"
 	"songspot/internal/ws"
 
 	"github.com/google/uuid"
@@ -134,6 +136,9 @@ func writeJSON(w http.ResponseWriter, status int, payload interface{}) {
 
 func SetupRestRoutes(mux *http.ServeMux, rdb *redis.Client) {
 	ctx := context.Background()
+
+	// Keyless YouTube search + playlist import (see internal/music).
+	musicProvider := music.NewInnerTube()
 
 	mux.HandleFunc("/rooms", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -493,5 +498,128 @@ func SetupRestRoutes(mux *http.ServeMux, rdb *redis.Client) {
 		}
 
 		writeJSON(w, http.StatusOK, room.State)
+	})
+
+	// Search YouTube for songs to add without leaving the app. Results are cached
+	// in Redis for an hour so repeat queries don't re-hit YouTube.
+	mux.HandleFunc("GET /search", func(w http.ResponseWriter, r *http.Request) {
+		query := strings.TrimSpace(r.URL.Query().Get("q"))
+		if query == "" {
+			http.Error(w, "q is required", http.StatusBadRequest)
+			return
+		}
+
+		limit := 15
+		if l := r.URL.Query().Get("limit"); l != "" {
+			if n, err := strconv.Atoi(l); err == nil && n > 0 && n <= 50 {
+				limit = n
+			}
+		}
+
+		cacheKey := "search:" + strconv.Itoa(limit) + ":" + strings.ToLower(query)
+		if cached, err := rdb.Get(ctx, cacheKey).Result(); err == nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			io.WriteString(w, cached)
+			return
+		}
+
+		songs, err := musicProvider.Search(r.Context(), query, limit)
+		if err != nil {
+			log.Printf("search %q failed: %v", query, err)
+			http.Error(w, "Search is unavailable right now", http.StatusBadGateway)
+			return
+		}
+		if data, err := json.Marshal(songs); err == nil {
+			rdb.Set(ctx, cacheKey, data, time.Hour)
+		}
+		writeJSON(w, http.StatusOK, songs)
+	})
+
+	// Preview a YouTube playlist's tracks without mutating any room.
+	mux.HandleFunc("GET /playlist", func(w http.ResponseWriter, r *http.Request) {
+		playlistID := music.ParsePlaylistID(r.URL.Query().Get("url"))
+		if playlistID == "" {
+			http.Error(w, "a valid playlist url is required", http.StatusBadRequest)
+			return
+		}
+		songs, err := musicProvider.Playlist(r.Context(), playlistID)
+		if err != nil {
+			log.Printf("playlist %q failed: %v", playlistID, err)
+			http.Error(w, "Couldn't load that playlist", http.StatusBadGateway)
+			return
+		}
+		if songs == nil {
+			songs = []models.Song{}
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"songs": songs})
+	})
+
+	// Set the room's current song directly, powering "Play now" from a search
+	// result (unlike queue/next, which only pops the top of the queue).
+	mux.HandleFunc("POST /rooms/{roomID}/play", func(w http.ResponseWriter, r *http.Request) {
+		roomID := r.PathValue("roomID")
+
+		var req struct {
+			Song models.Song `json:"song"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Song.ID == "" {
+			http.Error(w, "song with an id is required", http.StatusBadRequest)
+			return
+		}
+
+		room, err := getRoom(roomID)
+		if err != nil {
+			http.Error(w, "Room not found", http.StatusNotFound)
+			return
+		}
+
+		room.State.CurrentSong = req.Song.ID
+		room.State.IsPlaying = true
+		room.State.SyncTimeMs = 0
+		room.State.UpdatedAt = time.Now().UnixMilli()
+
+		if err := saveRoom(roomID, room); err != nil {
+			http.Error(w, "Failed to update playback", http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, room.State)
+	})
+
+	// Append many songs to the queue in one write — used by playlist import to
+	// avoid N round-trips and N racing read-modify-writes.
+	mux.HandleFunc("POST /rooms/{roomID}/queue/batch", func(w http.ResponseWriter, r *http.Request) {
+		roomID := r.PathValue("roomID")
+
+		var req struct {
+			Songs []models.Song `json:"songs"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid songs data", http.StatusBadRequest)
+			return
+		}
+		if len(req.Songs) == 0 {
+			http.Error(w, "songs is required", http.StatusBadRequest)
+			return
+		}
+
+		room, err := getRoom(roomID)
+		if err != nil {
+			http.Error(w, "Room not found", http.StatusNotFound)
+			return
+		}
+
+		for _, s := range req.Songs {
+			if s.ID == "" {
+				continue
+			}
+			room.Queue = append(room.Queue, models.QueueItem{Song: s, Votes: 0})
+		}
+
+		if err := saveRoom(roomID, room); err != nil {
+			http.Error(w, "Failed to save queue", http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, room.Queue)
 	})
 }
