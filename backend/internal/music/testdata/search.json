@@ -1,0 +1,51 @@
+{
+  "contents": {
+    "twoColumnSearchResultsRenderer": {
+      "primaryContents": {
+        "sectionListRenderer": {
+          "contents": [
+            {
+              "itemSectionRenderer": {
+                "contents": [
+                  {
+                    "videoRenderer": {
+                      "videoId": "dQw4w9WgXcQ",
+                      "title": { "runs": [{ "text": "Rick Astley - Never Gonna Give You Up" }] },
+                      "lengthText": { "simpleText": "3:33" },
+                      "ownerText": { "runs": [{ "text": "Rick Astley" }] },
+                      "thumbnail": {
+                        "thumbnails": [
+                          { "url": "https://i.ytimg.com/vi/dQw4w9WgXcQ/default.jpg" },
+                          { "url": "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg" }
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "videoRenderer": {
+                      "videoId": "5qap5aO4i9A",
+                      "title": { "runs": [{ "text": "lofi hip hop radio - beats to relax/study to" }] },
+                      "ownerText": { "runs": [{ "text": "Lofi Girl" }] },
+                      "thumbnail": {
+                        "thumbnails": [
+                          { "url": "//i.ytimg.com/vi/5qap5aO4i9A/hqdefault.jpg" }
+                        ]
+                      }
+                    }
+                  },
+                  { "promotedSparklesTextSearchRenderer": { "note": "an ad, no videoId" } },
+                  {
+                    "videoRenderer": {
+                      "videoId": "dQw4w9WgXcQ",
+                      "title": { "runs": [{ "text": "duplicate should be dropped" }] }
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}
