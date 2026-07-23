@@ -76,9 +76,13 @@ export const api = {
     }),
 
   // Advances the queue; the backend returns the new RoomState (not full
-  // RoomData), so callers should refetch the room after this.
-  advanceQueue: (roomID: string) =>
-    request<RoomState>(`/rooms/${roomID}/queue/next`, { method: "POST" }),
+  // RoomData), so callers should refetch the room after this. userID is checked
+  // against the host when playback is host-only.
+  advanceQueue: (roomID: string, userID: string) =>
+    request<RoomState>(
+      `/rooms/${roomID}/queue/next?userID=${encodeURIComponent(userID)}`,
+      { method: "POST" },
+    ),
 
   // Search YouTube in-app (keyless InnerTube, backed by the Go /search route).
   search: (query: string, limit = 15) =>
@@ -98,9 +102,16 @@ export const api = {
     }),
 
   // Set the room's current song directly ("Play now").
-  playNow: (roomID: string, song: Song) =>
+  playNow: (roomID: string, song: Song, userID: string) =>
     request<RoomState>(`/rooms/${roomID}/play`, {
       method: "POST",
-      body: JSON.stringify({ song }),
+      body: JSON.stringify({ song, userID }),
+    }),
+
+  // Host-only: hand playback control to everyone, or take it back.
+  setControl: (roomID: string, userID: string, everyoneControls: boolean) =>
+    request<RoomState>(`/rooms/${roomID}/control`, {
+      method: "POST",
+      body: JSON.stringify({ userID, everyoneControls }),
     }),
 };

@@ -20,6 +20,7 @@ export interface RoomState {
   isPlaying: boolean;
   syncTimeMs: number;
   updatedAt: number;
+  everyoneControls: boolean; // when true, any participant can drive playback
 }
 
 export interface RoomData {

@@ -5,6 +5,8 @@ import type { Song } from "../lib/types";
 
 interface Props {
   roomID: string;
+  /** Whether this participant may play a track immediately (host / everyone). */
+  canPlayNow: boolean;
   /** Refetch + broadcast after the queue changes. */
   onChanged: () => void;
   /** Set the room's current song immediately. */
@@ -21,7 +23,7 @@ function detectMode(input: string): Mode {
   return "search";
 }
 
-export function AddSong({ roomID, onChanged, onPlayNow }: Props) {
+export function AddSong({ roomID, canPlayNow, onChanged, onPlayNow }: Props) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Song[]>([]);
   const [playlist, setPlaylist] = useState<Song[] | null>(null);
@@ -181,15 +183,17 @@ export function AddSong({ roomID, onChanged, onPlayNow }: Props) {
                   {song.duration > 0 ? formatTime(song.duration) : "—"}
                 </p>
               </div>
-              <button
-                className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-accent text-[0.7rem] text-[#1a1206] transition hover:scale-105 disabled:opacity-45"
-                onClick={() => playNow(song)}
-                disabled={pendingId === song.id}
-                aria-label={`Play ${song.title} now`}
-                title="Play now"
-              >
-                ►
-              </button>
+              {canPlayNow && (
+                <button
+                  className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-accent text-[0.7rem] text-[#1a1206] transition hover:scale-105 disabled:opacity-45"
+                  onClick={() => playNow(song)}
+                  disabled={pendingId === song.id}
+                  aria-label={`Play ${song.title} now`}
+                  title="Play now"
+                >
+                  ►
+                </button>
+              )}
               <button
                 className="btn shrink-0 !px-3 !py-1.5 text-[0.82rem]"
                 onClick={() => add(song)}
