@@ -188,6 +188,15 @@ export function Room() {
     notifyQueueChanged();
   }
 
+  async function handlePlayNow(song: Song) {
+    songMeta.current[song.id] = song;
+    await api.playNow(roomID, song);
+    // refetch() updates `room`, which the room-state effect turns into a
+    // player.load(); notify peers so they refetch and load the new song too.
+    await refetch();
+    notifyQueueChanged();
+  }
+
   async function mutateQueue(fn: () => Promise<QueueItem[]>, id: string) {
     setPendingId(id);
     try {
@@ -352,7 +361,11 @@ export function Room() {
 
         <aside className="flex flex-col gap-[1.1rem] lg:sticky lg:top-6">
           <div className="card">
-            <AddSong roomID={roomID} onAdded={() => void onSongAdded()} />
+            <AddSong
+              roomID={roomID}
+              onChanged={() => void onSongAdded()}
+              onPlayNow={handlePlayNow}
+            />
           </div>
 
           <div className="card !pb-1.5">
