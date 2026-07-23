@@ -33,8 +33,8 @@ go run ./cmd            # serves http://localhost:8080
 Then the frontend:
 
 ```sh
-npm install
-npm run dev            # http://localhost:5173
+pnpm install
+pnpm dev               # http://localhost:5173
 ```
 
 In dev, Vite proxies `/api/*` and `/ws` to the backend on `:8080`, so there's
@@ -43,8 +43,8 @@ no CORS setup needed. Point the proxy elsewhere with `BACKEND_URL`.
 ## Build
 
 ```sh
-npm run build          # typecheck + production bundle into dist/
-npm run preview        # serve the built bundle
+pnpm build             # typecheck + production bundle into dist/
+pnpm preview           # serve the built bundle
 ```
 
 For a production deploy where the backend is reachable directly (and serves
