@@ -9,11 +9,13 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"songspot/internal/models"
-	"songspot/internal/ws"
+	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"songspot/internal/models"
+	"songspot/internal/ws"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -336,5 +338,160 @@ func SetupRestRoutes(mux *http.ServeMux, rdb *redis.Client) {
 			return
 		}
 		http.NotFound(w, r)
+	})
+
+	getRoom := func(roomID string) (*models.RoomData, error) {
+		roomKey := "room:" + roomID
+		dataStr, err := rdb.Get(ctx, roomKey).Result()
+		if err != nil {
+			return nil, err
+		}
+		var room models.RoomData
+		err = json.Unmarshal([]byte(dataStr), &room)
+		return &room, err
+	}
+
+	saveRoom := func(roomID string, room *models.RoomData) error {
+		roomKey := "room:" + roomID
+		data, err := json.Marshal(room)
+		if err != nil {
+			return err
+		}
+		return rdb.Set(ctx, roomKey, data, 0).Err()
+	}
+
+	mux.HandleFunc("GET /rooms/{roomID}/queue", func(w http.ResponseWriter, r *http.Request) {
+		roomID := r.PathValue("roomID")
+		room, err := getRoom(roomID)
+		if err != nil {
+			http.Error(w, "Room not found", http.StatusNotFound)
+			return
+		}
+		writeJSON(w, http.StatusOK, room.Queue)
+	})
+
+	mux.HandleFunc("POST /rooms/{roomID}/queue", func(w http.ResponseWriter, r *http.Request) {
+		roomID := r.PathValue("roomID")
+
+		var newSong models.Song
+		if err := json.NewDecoder(r.Body).Decode(&newSong); err != nil {
+			http.Error(w, "Invalid song data", http.StatusBadRequest)
+			return
+		}
+
+		room, err := getRoom(roomID)
+		if err != nil {
+			http.Error(w, "Room not found", http.StatusNotFound)
+			return
+		}
+
+		room.Queue = append(room.Queue, models.QueueItem{
+			Song:  newSong,
+			Votes: 0,
+		})
+
+		if err := saveRoom(roomID, room); err != nil {
+			http.Error(w, "Failed to save queue", http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, room.Queue)
+	})
+
+	mux.HandleFunc("POST /rooms/{roomID}/queue/{songID}/vote", func(w http.ResponseWriter, r *http.Request) {
+		roomID := r.PathValue("roomID")
+		songID := r.PathValue("songID")
+
+		room, err := getRoom(roomID)
+		if err != nil {
+			http.Error(w, "Room not found", http.StatusNotFound)
+			return
+		}
+
+		found := false
+		for i := range room.Queue {
+			if room.Queue[i].Song.ID == songID {
+				room.Queue[i].Votes++
+				found = true
+				break
+			}
+		}
+		if !found {
+			http.Error(w, "Song not found in queue", http.StatusNotFound)
+			return
+		}
+
+		sort.SliceStable(room.Queue, func(i, j int) bool {
+			return room.Queue[i].Votes > room.Queue[j].Votes
+		})
+
+		if err := saveRoom(roomID, room); err != nil {
+			http.Error(w, "Failed to save vote", http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, room.Queue)
+	})
+
+	mux.HandleFunc("DELETE /rooms/{roomID}/queue/{songID}", func(w http.ResponseWriter, r *http.Request) {
+		roomID := r.PathValue("roomID")
+		songID := r.PathValue("songID")
+
+		room, err := getRoom(roomID)
+		if err != nil {
+			http.Error(w, "Room not found", http.StatusNotFound)
+			return
+		}
+
+		found := false
+		updatedQueue := []models.QueueItem{}
+		for _, item := range room.Queue {
+			if item.Song.ID != songID {
+				updatedQueue = append(updatedQueue, item)
+				continue
+			}
+			found = true
+		}
+		if !found {
+			http.Error(w, "Song not found in queue", http.StatusNotFound)
+			return
+		}
+		room.Queue = updatedQueue
+
+		if err := saveRoom(roomID, room); err != nil {
+			http.Error(w, "Failed to update queue", http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, room.Queue)
+	})
+
+	mux.HandleFunc("POST /rooms/{roomID}/queue/next", func(w http.ResponseWriter, r *http.Request) {
+		roomID := r.PathValue("roomID")
+
+		room, err := getRoom(roomID)
+		if err != nil {
+			http.Error(w, "Room not found", http.StatusNotFound)
+			return
+		}
+
+		if len(room.Queue) == 0 {
+			http.Error(w, "Queue is empty", http.StatusBadRequest)
+			return
+		}
+
+		// the top song becomes current song
+		nextSong := room.Queue[0].Song
+		room.State.CurrentSong = nextSong.ID
+		room.State.IsPlaying = true
+		room.State.UpdatedAt = time.Now().UnixMilli()
+		room.State.SyncTimeMs = 0 // reset time for new song
+
+		// remove it from queue
+		room.Queue = room.Queue[1:]
+
+		if err := saveRoom(roomID, room); err != nil {
+			http.Error(w, "Failed to advance queue", http.StatusInternalServerError)
+			return
+		}
+
+		writeJSON(w, http.StatusOK, room.State)
 	})
 }
