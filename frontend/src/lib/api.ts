@@ -1,4 +1,4 @@
-import type { Invite, QueueItem, RoomData, Song } from "./types";
+import type { Invite, QueueItem, RoomData, RoomState, Song } from "./types";
 
 // Dev: "/api" is proxied to the Go backend by Vite (see vite.config.ts).
 // Prod: set VITE_API_URL to the backend origin once it serves CORS headers.
@@ -77,4 +77,28 @@ export const api = {
 
   advanceQueue: (roomID: string) =>
     request<RoomData>(`/rooms/${roomID}/queue/next`, { method: "POST" }),
+
+  // Search YouTube in-app (keyless InnerTube, backed by the Go /search route).
+  search: (query: string, limit = 15) =>
+    request<Song[]>(
+      `/search?q=${encodeURIComponent(query)}&limit=${limit}`,
+    ),
+
+  // Resolve a YouTube playlist URL to its songs (preview, no mutation).
+  resolvePlaylist: (url: string) =>
+    request<{ songs: Song[] }>(`/playlist?url=${encodeURIComponent(url)}`),
+
+  // Append many songs to the queue in one write (used by playlist import).
+  addBatch: (roomID: string, songs: Song[]) =>
+    request<QueueItem[]>(`/rooms/${roomID}/queue/batch`, {
+      method: "POST",
+      body: JSON.stringify({ songs }),
+    }),
+
+  // Set the room's current song directly ("Play now").
+  playNow: (roomID: string, song: Song) =>
+    request<RoomState>(`/rooms/${roomID}/play`, {
+      method: "POST",
+      body: JSON.stringify({ song }),
+    }),
 };
