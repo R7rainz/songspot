@@ -9,7 +9,7 @@ documented in [`../backend/AGENT.md`](../backend/AGENT.md).
 - **React 18 + TypeScript + Vite**
 - **React Router** for the Home / Room / Join flows
 - **YouTube IFrame Player API** for playback
-- No CSS framework — a small hand-written design system in `src/styles.css`
+- **Tailwind CSS v4** — design tokens and primitives in `src/styles.css`
 
 ## Design
 

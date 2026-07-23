@@ -39,15 +39,15 @@ export function InvitePanel({ roomID }: Props) {
   }
 
   return (
-    <div className="invite">
-      <div className="invite__row">
-        <input className="input input--mono" readOnly value={link} />
-        <button className="btn" onClick={copy}>
+    <div>
+      <div className="flex gap-2">
+        <input className="input input-mono" readOnly value={link} />
+        <button className="btn shrink-0" onClick={copy}>
           {copied ? "Copied" : "Copy"}
         </button>
       </div>
-      <div className="invite__foot">
-        <button className="btn btn--ghost" onClick={generate} disabled={busy}>
+      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2.5">
+        <button className="btn btn-ghost" onClick={generate} disabled={busy}>
           {busy
             ? "Generating…"
             : invite
@@ -55,13 +55,13 @@ export function InvitePanel({ roomID }: Props) {
               : "Create invite link"}
         </button>
         {invite && (
-          <span className="muted muted--sm">
+          <span className="text-[0.82rem] text-muted2">
             {invite.maxUses} uses · expires{" "}
             {new Date(invite.expiresAt).toLocaleString()}
           </span>
         )}
       </div>
-      {error && <p className="alert alert--inline">{error}</p>}
+      {error && <p className="alert mt-2.5">{error}</p>}
     </div>
   );
 }

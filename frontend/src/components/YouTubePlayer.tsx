@@ -41,6 +41,7 @@ export const YouTubePlayer = forwardRef<PlayerHandle, Props>(
     useEffect(() => {
       let cancelled = false;
       const mount = document.createElement("div");
+      mount.className = "absolute inset-0 h-full w-full";
       hostRef.current?.appendChild(mount);
 
       loadYouTubeApi().then((YT) => {
@@ -107,8 +108,8 @@ export const YouTubePlayer = forwardRef<PlayerHandle, Props>(
     }));
 
     return (
-      <div className="player-frame" data-ready={ready}>
-        <div ref={hostRef} className="player-mount" />
+      <div className="absolute inset-0" data-ready={ready}>
+        <div ref={hostRef} className="player-host" />
       </div>
     );
   },

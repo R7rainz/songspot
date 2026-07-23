@@ -11,6 +11,12 @@ import { AddSong } from "../components/AddSong";
 import { Queue } from "../components/Queue";
 import { InvitePanel } from "../components/InvitePanel";
 
+const DOT: Record<string, string> = {
+  open: "bg-[#5be3a1] shadow-[0_0_0_4px_rgba(91,227,161,0.16)]",
+  connecting: "bg-amber",
+  closed: "bg-coral",
+};
+
 export function Room() {
   const { roomID = "" } = useParams();
   const session = useMemo(() => getSession(roomID), [roomID]);
@@ -196,12 +202,18 @@ export function Room() {
 
   if (loadError) {
     return (
-      <main className="center-screen">
-        <div className="join-card">
+      <main
+        className="grid min-h-full place-items-center p-8"
+        style={{
+          background:
+            "radial-gradient(120% 80% at 50% 0%, #14161f, var(--color-bg) 60%)",
+        }}
+      >
+        <div className="flex max-w-[380px] flex-col items-center gap-3.5 text-center">
           <EqualizerMark size={28} />
-          <h2 className="display display--sm">Room not found</h2>
-          <p className="muted">{loadError}</p>
-          <Link className="btn btn--primary" to="/">
+          <h2 className="display display-sm">Room not found</h2>
+          <p className="text-muted">{loadError}</p>
+          <Link className="btn btn-primary mt-1.5" to="/">
             Back to start
           </Link>
         </div>
@@ -214,15 +226,23 @@ export function Room() {
   const hasSong = Boolean(room?.state.currentSong);
 
   return (
-    <div className="room">
-      <header className="topbar">
-        <Link className="topbar__brand" to="/">
+    <div
+      className="flex min-h-full flex-col"
+      style={{
+        background:
+          "radial-gradient(140% 60% at 80% -10%, #14151d, var(--color-bg) 55%)",
+      }}
+    >
+      <header className="flex items-center justify-between gap-4 border-b border-line-soft px-[clamp(1rem,3vw,2rem)] py-4">
+        <Link className="flex items-center gap-2.5 text-ink" to="/">
           <EqualizerMark size={20} playing={playing} />
-          <span className="wordmark wordmark--sm">SongSpot</span>
+          <span className="font-display text-[1.05rem] font-bold tracking-[-0.02em]">
+            SongSpot
+          </span>
         </Link>
-        <div className="topbar__meta">
-          <span className={`dot dot--${conn}`} />
-          <span className="muted muted--sm">
+        <div className="flex items-center gap-2.5">
+          <span className={`h-2 w-2 rounded-full ${DOT[conn]}`} />
+          <span className="text-[0.82rem] text-muted">
             {conn === "open"
               ? "In sync"
               : conn === "connecting"
@@ -233,14 +253,19 @@ export function Room() {
         </div>
       </header>
 
-      <main className="room__grid">
-        <section className="stage">
+      <main className="grid flex-1 items-start gap-[clamp(1rem,2.5vw,1.8rem)] p-[clamp(1rem,3vw,2rem)] lg:grid-cols-[minmax(0,1.7fr)_minmax(320px,1fr)]">
+        <section className="relative">
           <div
-            className="stage__spot"
             aria-hidden="true"
-            data-playing={playing}
+            className={`pointer-events-none absolute inset-x-[-8%] -top-[12%] h-[60%] transition-opacity duration-500 ${
+              playing ? "opacity-100" : "opacity-0"
+            }`}
+            style={{
+              background:
+                "radial-gradient(circle at 50% 0%, rgba(255,141,92,0.14), transparent 60%)",
+            }}
           />
-          <div className="stage__player">
+          <div className="relative aspect-video overflow-hidden rounded-[22px] border border-line bg-black shadow-[0_24px_60px_-28px_rgba(0,0,0,0.8)]">
             <YouTubePlayer
               ref={playerRef}
               onReady={() => room && syncPlayerToState(room)}
@@ -257,27 +282,27 @@ export function Room() {
               }}
             />
             {!hasSong && (
-              <div className="stage__idle">
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-gradient-to-b from-[#101219] to-[#0a0b0f] text-center">
                 <EqualizerMark size={40} />
-                <p>Nothing on yet</p>
-                <p className="muted muted--sm">
+                <p className="mt-2 font-display font-bold">Nothing on yet</p>
+                <p className="text-[0.82rem] text-muted2">
                   Add a track and hit skip to start the set.
                 </p>
               </div>
             )}
           </div>
 
-          <div className="nowplaying">
-            <div className="nowplaying__head">
+          <div className="mt-5 rounded-[14px] border border-line bg-surface p-[1.1rem]">
+            <div className="flex min-w-0 items-center gap-2.5">
               <EqualizerMark size={18} playing={playing} />
-              <div className="nowplaying__title">
+              <div className="truncate font-display text-[1.1rem] font-bold tracking-[-0.01em]">
                 {currentTitle ?? "Waiting for the first track"}
               </div>
             </div>
 
-            <div className="transport">
+            <div className="mt-4 flex items-center gap-3">
               <button
-                className="transport__play"
+                className="grid h-[46px] w-[46px] shrink-0 place-items-center rounded-full bg-accent text-[0.95rem] text-[#1a1206] transition hover:scale-105 hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-45"
                 onClick={togglePlay}
                 disabled={!hasSong}
                 aria-label={playing ? "Pause" : "Play"}
@@ -285,7 +310,9 @@ export function Room() {
                 {playing ? "❚❚" : "►"}
               </button>
 
-              <span className="timecode">{formatTime(shownTime)}</span>
+              <span className="min-w-[42px] text-center font-mono text-[0.78rem]">
+                {formatTime(shownTime)}
+              </span>
               <input
                 className="scrub"
                 type="range"
@@ -307,12 +334,12 @@ export function Room() {
                   } as React.CSSProperties
                 }
               />
-              <span className="timecode timecode--muted">
+              <span className="min-w-[42px] text-center font-mono text-[0.78rem] text-muted2">
                 {formatTime(duration)}
               </span>
 
               <button
-                className="transport__skip"
+                className="btn shrink-0 !px-3.5 !py-2 text-[0.85rem]"
                 onClick={() => void skipNext()}
                 disabled={queue.length === 0}
                 title="Skip to next"
@@ -323,15 +350,17 @@ export function Room() {
           </div>
         </section>
 
-        <aside className="panel">
+        <aside className="flex flex-col gap-[1.1rem] lg:sticky lg:top-6">
           <div className="card">
             <AddSong roomID={roomID} onAdded={() => void onSongAdded()} />
           </div>
 
-          <div className="card card--flush">
-            <div className="card__head">
-              <h2 className="card__title">Up next</h2>
-              <span className="muted muted--sm">{queue.length} queued</span>
+          <div className="card !pb-1.5">
+            <div className="mb-3.5 flex items-baseline justify-between">
+              <h2 className="m-0 font-display text-base font-bold">Up next</h2>
+              <span className="text-[0.82rem] text-muted2">
+                {queue.length} queued
+              </span>
             </div>
             <Queue
               items={queue}
@@ -342,8 +371,10 @@ export function Room() {
           </div>
 
           <div className="card">
-            <div className="card__head">
-              <h2 className="card__title">Invite the room</h2>
+            <div className="mb-3.5 flex items-baseline justify-between">
+              <h2 className="m-0 font-display text-base font-bold">
+                Invite the room
+              </h2>
             </div>
             <InvitePanel roomID={roomID} />
           </div>

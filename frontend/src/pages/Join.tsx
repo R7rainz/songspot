@@ -29,21 +29,30 @@ export function Join() {
   }, [token, navigate]);
 
   return (
-    <main className="center-screen">
-      <div className="join-card">
+    <main
+      className="grid min-h-full place-items-center p-8"
+      style={{
+        background:
+          "radial-gradient(120% 80% at 50% 0%, #14161f, var(--color-bg) 60%)",
+      }}
+    >
+      <div className="flex max-w-[380px] flex-col items-center gap-3.5 text-center">
         <EqualizerMark size={28} playing={!error} />
         {error ? (
           <>
-            <h2 className="display display--sm">Invite unavailable</h2>
-            <p className="muted">{error}</p>
-            <button className="btn btn--primary" onClick={() => navigate("/")}>
+            <h2 className="display display-sm">Invite unavailable</h2>
+            <p className="text-muted">{error}</p>
+            <button
+              className="btn btn-primary mt-1.5"
+              onClick={() => navigate("/")}
+            >
               Back to start
             </button>
           </>
         ) : (
           <>
-            <h2 className="display display--sm">Joining the room…</h2>
-            <p className="muted">Grabbing you a seat.</p>
+            <h2 className="display display-sm">Joining the room…</h2>
+            <p className="text-muted">Grabbing you a seat.</p>
           </>
         )}
       </div>

@@ -34,11 +34,14 @@ export function AddSong({ roomID, onAdded }: Props) {
   }
 
   return (
-    <form className="addsong" onSubmit={submit}>
-      <label className="field-label" htmlFor="addsong-input">
+    <form onSubmit={submit}>
+      <label
+        className="mb-2 block text-[0.8rem] font-medium text-muted"
+        htmlFor="addsong-input"
+      >
         Add to the queue
       </label>
-      <div className="addsong__row">
+      <div className="flex gap-2">
         <input
           id="addsong-input"
           className="input"
@@ -46,11 +49,14 @@ export function AddSong({ roomID, onAdded }: Props) {
           value={value}
           onChange={(e) => setValue(e.target.value)}
         />
-        <button className="btn btn--primary" disabled={busy || !value.trim()}>
+        <button
+          className="btn btn-primary shrink-0"
+          disabled={busy || !value.trim()}
+        >
           {busy ? "Adding…" : "Add"}
         </button>
       </div>
-      {error && <p className="alert alert--inline">{error}</p>}
+      {error && <p className="alert mt-2.5">{error}</p>}
     </form>
   );
 }
