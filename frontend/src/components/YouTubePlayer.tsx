@@ -14,6 +14,9 @@ export interface PlayerHandle {
   load(videoId: string, startSeconds: number, autoplay: boolean): void;
   getTime(): number;
   getDuration(): number;
+  getState(): number;
+  setVolume(volume: number): void;
+  setMuted(muted: boolean): void;
 }
 
 interface Props {
@@ -105,6 +108,14 @@ export const YouTubePlayer = forwardRef<PlayerHandle, Props>(
         }),
       getTime: () => playerRef.current?.getCurrentTime() ?? 0,
       getDuration: () => playerRef.current?.getDuration() ?? 0,
+      getState: () => playerRef.current?.getPlayerState() ?? -1,
+      setVolume: (v) => playerRef.current?.setVolume(v),
+      setMuted: (muted) => {
+        const p = playerRef.current;
+        if (!p) return;
+        if (muted) p.mute();
+        else p.unMute();
+      },
     }));
 
     return (
