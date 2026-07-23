@@ -1,0 +1,247 @@
+@import "tailwindcss";
+
+/* ============================================================
+   SongSpot — "spotlight on a dark stage"
+   Design tokens + a thin layer for effects utilities can't express.
+   ============================================================ */
+
+@theme {
+  --color-bg: #0b0c10;
+  --color-bg2: #101219;
+  --color-surface: #16181f;
+  --color-surface2: #1c1f28;
+  --color-surface3: #232733;
+  --color-line: #262a34;
+  --color-line-soft: #1e222b;
+  --color-ink: #edeef2;
+  --color-muted: #9498a6;
+  --color-muted2: #6d7280;
+  --color-amber: #ffb84d;
+  --color-coral: #ff5d8f;
+
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-display: "Bricolage Grotesque", "Inter", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --animate-float: float 7s ease-in-out infinite;
+  --animate-spin-slow: spin 14s linear infinite;
+  --animate-note: note-rise 7s linear infinite;
+}
+
+@keyframes eq-bounce {
+  0%,
+  100% {
+    transform: scaleY(0.35);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-12px);
+  }
+}
+@keyframes note-rise {
+  0% {
+    transform: translateY(20px) rotate(0deg);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.7;
+  }
+  85% {
+    opacity: 0.7;
+  }
+  100% {
+    transform: translateY(-90px) rotate(18deg);
+    opacity: 0;
+  }
+}
+
+/* Accent gradient as a reusable utility. */
+@utility bg-accent {
+  background-image: linear-gradient(135deg, var(--color-amber), var(--color-coral));
+}
+@utility text-gradient {
+  background-image: linear-gradient(135deg, var(--color-amber), var(--color-coral));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-bg font-sans text-ink;
+    margin: 0;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  :focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(255, 141, 92, 0.35);
+    border-radius: 10px;
+  }
+}
+
+@layer components {
+  /* ---- Primitives ---------------------------------------- */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-[10px] border
+      border-line bg-surface2 px-[1.1rem] py-[0.62rem] text-[0.92rem] font-medium
+      text-ink transition-[transform,background-color,border-color] duration-150;
+  }
+  .btn:hover:not(:disabled) {
+    @apply -translate-y-px bg-surface3;
+  }
+  .btn:disabled {
+    @apply cursor-not-allowed opacity-45;
+  }
+  .btn-primary {
+    @apply border-transparent bg-accent font-semibold text-[#1a1206]
+      hover:brightness-105;
+  }
+  .btn-ghost {
+    @apply bg-transparent;
+  }
+  .btn-lg {
+    @apply px-6 py-[0.9rem] text-base;
+  }
+
+  .input {
+    @apply w-full rounded-[10px] border border-line bg-bg2 px-[0.85rem]
+      py-[0.68rem] text-[0.95rem] text-ink transition-colors
+      placeholder:text-muted2 focus:border-amber focus:outline-none;
+  }
+  .input-mono {
+    @apply font-mono text-[0.82rem] text-muted;
+  }
+
+  .card {
+    @apply rounded-[14px] border border-line bg-surface p-[1.1rem];
+  }
+
+  .pill {
+    @apply rounded-full border border-line bg-surface2 px-[0.6rem] py-[0.25rem]
+      font-mono text-[0.75rem] text-muted;
+  }
+
+  .alert {
+    @apply rounded-[10px] border border-coral/30 bg-coral/10 px-[0.8rem]
+      py-[0.6rem] text-[0.88rem] text-[#ffd0d0];
+  }
+
+  /* ---- Type treatments ----------------------------------- */
+  .display {
+    @apply m-0 font-display font-extrabold tracking-[-0.03em];
+    font-size: clamp(2.8rem, 8vw, 5.2rem);
+    line-height: 0.98;
+  }
+  .display-sm {
+    font-size: clamp(1.5rem, 4vw, 2rem);
+    line-height: 1.05;
+  }
+  .eyebrow {
+    @apply m-0 font-mono text-[0.72rem] uppercase tracking-[0.24em] text-amber;
+  }
+  .lede {
+    @apply m-0 max-w-[34ch] text-muted;
+    font-size: clamp(1rem, 2.2vw, 1.18rem);
+  }
+  .wordmark {
+    @apply font-display text-[1.35rem] font-bold tracking-[-0.02em];
+  }
+
+  /* ---- Equalizer mark (signature) ------------------------ */
+  .eq {
+    @apply inline-flex items-end gap-[2px];
+  }
+  .eq__bar {
+    @apply min-w-[2px] flex-1 rounded bg-accent;
+    height: calc(var(--h) * 100%);
+    transform-origin: bottom;
+    transition: height 0.2s ease;
+  }
+  .eq--playing .eq__bar {
+    animation: eq-bounce 0.9s ease-in-out infinite;
+    animation-delay: calc(var(--i) * -0.14s);
+  }
+
+  /* ---- Gradient range scrubber --------------------------- */
+  .scrub {
+    -webkit-appearance: none;
+    appearance: none;
+    @apply h-[6px] flex-1 rounded-full;
+    background: linear-gradient(
+      to right,
+      var(--color-amber),
+      var(--color-coral) var(--pct, 0%),
+      var(--color-surface3) var(--pct, 0%)
+    );
+  }
+  .scrub::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    background: #fff;
+    border: 2px solid var(--color-coral);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  }
+  .scrub::-moz-range-thumb {
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    background: #fff;
+    border: 2px solid var(--color-coral);
+  }
+  .scrub:disabled {
+    @apply opacity-50;
+  }
+
+  /* ---- Home hero visual: spinning vinyl + floating notes -- */
+  .vinyl {
+    background:
+      radial-gradient(circle at 50% 50%, #2a2d36 0 14%, transparent 14.5%),
+      repeating-radial-gradient(
+        circle at 50% 50%,
+        #0e0f13 0 2px,
+        #17181e 2px 4px
+      );
+  }
+  .vinyl::after {
+    content: "";
+    position: absolute;
+    inset: 39%;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--color-amber), var(--color-coral));
+  }
+  .note {
+    animation: note-rise 7s linear infinite;
+  }
+
+  /* YouTube injects its own iframe into the mount; make it fill the frame. */
+  .player-host,
+  .player-host iframe {
+    @apply absolute inset-0 h-full w-full border-0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
