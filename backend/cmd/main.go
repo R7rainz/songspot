@@ -4,17 +4,15 @@ import (
 	"context"
 	"log"
 	"net/http"
-	"os"
+
 	"songspot/internal/api"
 
+	"github.com/caitlinelfring/go-env-default"
 	"github.com/redis/go-redis/v9"
 )
 
 func main() {
-	redisURL := "localhost:6380"
-	if url := os.Getenv("REDIS_URL"); url != "" {
-		redisURL = url
-	}
+	redisURL := env.GetDefault("REDIS_URL", "localhost:6380")
 
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     redisURL,
@@ -45,10 +43,7 @@ func main() {
 
 	api.SetupRestRoutes(mux, rdb)
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
+	port := env.GetDefault("PORT", "8080")
 
 	log.Printf("Starting SongSpot WebSocket Server on port %s...", port)
 
