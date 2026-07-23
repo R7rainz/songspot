@@ -134,6 +134,12 @@ func writeJSON(w http.ResponseWriter, status int, payload interface{}) {
 	}
 }
 
+// mayControlPlayback reports whether userID is allowed to drive playback in the
+// room: always the host, and everyone else only when the host has opened it up.
+func mayControlPlayback(room *models.RoomData, userID string) bool {
+	return room.State.EveryoneControls || userID == room.State.HostID
+}
+
 func SetupRestRoutes(mux *http.ServeMux, rdb *redis.Client) {
 	ctx := context.Background()
 
@@ -477,6 +483,11 @@ func SetupRestRoutes(mux *http.ServeMux, rdb *redis.Client) {
 			return
 		}
 
+		if !mayControlPlayback(room, r.URL.Query().Get("userID")) {
+			http.Error(w, "Only the host can control playback", http.StatusForbidden)
+			return
+		}
+
 		if len(room.Queue) == 0 {
 			http.Error(w, "Queue is empty", http.StatusBadRequest)
 			return
@@ -561,7 +572,8 @@ func SetupRestRoutes(mux *http.ServeMux, rdb *redis.Client) {
 		roomID := r.PathValue("roomID")
 
 		var req struct {
-			Song models.Song `json:"song"`
+			Song   models.Song `json:"song"`
+			UserID string      `json:"userID"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Song.ID == "" {
 			http.Error(w, "song with an id is required", http.StatusBadRequest)
@@ -571,6 +583,11 @@ func SetupRestRoutes(mux *http.ServeMux, rdb *redis.Client) {
 		room, err := getRoom(roomID)
 		if err != nil {
 			http.Error(w, "Room not found", http.StatusNotFound)
+			return
+		}
+
+		if !mayControlPlayback(room, req.UserID) {
+			http.Error(w, "Only the host can control playback", http.StatusForbidden)
 			return
 		}
 
@@ -621,5 +638,40 @@ func SetupRestRoutes(mux *http.ServeMux, rdb *redis.Client) {
 			return
 		}
 		writeJSON(w, http.StatusOK, room.Queue)
+	})
+
+	// Host-only: hand playback control to everyone, or take it back. Returns the
+	// updated room state so the caller can broadcast the change to peers.
+	mux.HandleFunc("POST /rooms/{roomID}/control", func(w http.ResponseWriter, r *http.Request) {
+		roomID := r.PathValue("roomID")
+
+		var req struct {
+			UserID           string `json:"userID"`
+			EveryoneControls bool   `json:"everyoneControls"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid request", http.StatusBadRequest)
+			return
+		}
+
+		room, err := getRoom(roomID)
+		if err != nil {
+			http.Error(w, "Room not found", http.StatusNotFound)
+			return
+		}
+
+		if req.UserID != room.State.HostID {
+			http.Error(w, "Only the host can change this", http.StatusForbidden)
+			return
+		}
+
+		room.State.EveryoneControls = req.EveryoneControls
+		room.State.UpdatedAt = time.Now().UnixMilli()
+
+		if err := saveRoom(roomID, room); err != nil {
+			http.Error(w, "Failed to update room", http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, room.State)
 	})
 }
