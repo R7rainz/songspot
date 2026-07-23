@@ -73,12 +73,67 @@ func (c *Client) ReadPump() {
 			continue
 		}
 
-		// c.Hub.Broadcast <- message, we dont do this anymore instead of directly publish to redisClie        //so that all the servers hear it
 		ctx := context.Background()
 		channelName := "room_events:" + c.Hub.RoomID
-		err = c.Hub.redisClient.Publish(ctx, channelName, string(message)).Err()
-		if err != nil {
-			log.Printf("Failed to publish to Redis: %v", err)
+
+		switch event.Action {
+		case "play", "pause", "seek":
+			dataMap, ok := event.Data.(map[string]interface{})
+			if !ok {
+				log.Println("Invalid data payload for sync event")
+				continue
+			}
+
+			syncTimeMs, ok := dataMap["syncTimeMs"].(float64)
+			if !ok {
+				log.Println("syncTimeMs missing from sync event")
+				continue
+			}
+
+			roomKey := "room:" + c.Hub.RoomID
+			roomDataStr, err := c.Hub.redisClient.Get(ctx, roomKey).Result()
+			if err != nil {
+				log.Printf("Failed to fetch room state: %v", err)
+				continue
+			}
+
+			var room models.RoomData
+			if err := json.Unmarshal([]byte(roomDataStr), &room); err != nil {
+				log.Printf("Failed to decode room state: %v", err)
+				continue
+			}
+
+			room.State.IsPlaying = event.Action == "play"
+			room.State.SyncTimeMs = int64(syncTimeMs)
+			room.State.UpdatedAt = time.Now().UnixMilli()
+
+			updatedRoomData, err := json.Marshal(room)
+			if err != nil {
+				log.Printf("Failed to encode room state: %v", err)
+				continue
+			}
+
+			if err := c.Hub.redisClient.Set(ctx, roomKey, updatedRoomData, 0).Err(); err != nil {
+				log.Printf("Failed to update room state: %v", err)
+				continue
+			}
+
+			event.Timestamp = time.Now().UnixMilli()
+			enrichedMsg, err := json.Marshal(event)
+			if err != nil {
+				log.Printf("Failed to encode sync event: %v", err)
+				continue
+			}
+
+			if err := c.Hub.redisClient.Publish(ctx, channelName, string(enrichedMsg)).Err(); err != nil {
+				log.Printf("Failed to publish sync event to Redis: %v", err)
+			}
+
+		default:
+			err = c.Hub.redisClient.Publish(ctx, channelName, string(message)).Err()
+			if err != nil {
+				log.Printf("Failed to publish to Redis: %v", err)
+			}
 		}
 	}
 }
