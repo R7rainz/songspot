@@ -5,11 +5,12 @@ import "./styles.css";
 import { Home } from "./pages/Home";
 import { Room } from "./pages/Room";
 import { Join } from "./pages/Join";
+import { ErrorPage } from "./pages/ErrorPage";
 
 const router = createBrowserRouter([
-  { path: "/", element: <Home /> },
-  { path: "/room/:roomID", element: <Room /> },
-  { path: "/join/:token", element: <Join /> },
+  { path: "/", element: <Home />, errorElement: <ErrorPage /> },
+  { path: "/room/:roomID", element: <Room />, errorElement: <ErrorPage /> },
+  { path: "/join/:token", element: <Join />, errorElement: <ErrorPage /> },
   { path: "*", element: <Home /> },
 ]);
 

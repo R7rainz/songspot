@@ -14,6 +14,9 @@ type Song struct {
 	Title     string `json:"title"`
 	Duration  int    `json:"duration"`
 	Thumbnail string `json:"thumbnail"`
+	// Channel is the uploader, shown to disambiguate search results (e.g.
+	// official vs. cover). Optional — omitted for songs added by raw link.
+	Channel string `json:"channel,omitempty"`
 }
 
 type QueueItem struct {

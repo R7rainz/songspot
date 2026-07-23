@@ -5,6 +5,7 @@ export interface Song {
   title: string;
   duration: number; // seconds (backend does not enforce units)
   thumbnail: string;
+  channel?: string; // uploader, present on search results
 }
 
 export interface QueueItem {

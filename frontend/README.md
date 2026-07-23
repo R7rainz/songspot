@@ -58,6 +58,9 @@ CORS headers), set `VITE_API_URL` and `VITE_WS_URL` — see `.env.example`.
 | Join via invite | `POST /invites/{token}/join`, link shape `/join/{token}` |
 | Load room + queue | `GET /rooms/{id}`, `GET /rooms/{id}/queue` |
 | Add / vote / remove | `POST`/`DELETE` on `/rooms/{id}/queue…` |
+| Search for a song | `GET /search?q=` (keyless InnerTube, backend) |
+| Play now | `POST /rooms/{id}/play` (set current song) |
+| Import a playlist | `GET /playlist?url=` → `POST /rooms/{id}/queue/batch` |
 | Skip | `POST /rooms/{id}/queue/next` |
 | Play / pause / seek | WebSocket `play` · `pause` · `seek` events |
 | Clock offset | WebSocket `ping` / `pong` |
