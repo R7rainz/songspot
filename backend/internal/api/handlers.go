@@ -670,8 +670,11 @@ func SetupRestRoutes(mux *http.ServeMux, rdb *redis.Client) {
 			return
 		}
 
+		// Only flip the permission — do NOT touch UpdatedAt/SyncTimeMs. Those are
+		// the playback anchor; bumping UpdatedAt without SyncTimeMs would make the
+		// drift-correction loop think the song is way behind and seek it back to
+		// the start (restarting the track on every toggle).
 		room.State.EveryoneControls = req.EveryoneControls
-		room.State.UpdatedAt = time.Now().UnixMilli()
 
 		if err := saveRoom(roomID, room); err != nil {
 			http.Error(w, "Failed to update room", http.StatusInternalServerError)
