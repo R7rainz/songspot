@@ -3,13 +3,21 @@ import { formatTime } from "../lib/youtube";
 
 interface Props {
   items: QueueItem[];
+  myUserId: string;
   onVote: (songID: string) => void;
   onRemove: (songID: string) => void;
   canRemove: boolean;
   pendingId?: string | null;
 }
 
-export function Queue({ items, onVote, onRemove, canRemove, pendingId }: Props) {
+export function Queue({
+  items,
+  myUserId,
+  onVote,
+  onRemove,
+  canRemove,
+  pendingId,
+}: Props) {
   if (items.length === 0) {
     return (
       <div className="py-6 text-center">
@@ -50,16 +58,27 @@ export function Queue({ items, onVote, onRemove, canRemove, pendingId }: Props) 
               {item.song.duration > 0 ? formatTime(item.song.duration) : "YouTube"}
             </p>
           </div>
-          <button
-            className="flex flex-col items-center gap-0.5 rounded-[10px] border border-line bg-surface2 px-2 py-1.5 leading-none transition-colors hover:border-amber hover:bg-surface3"
-            onClick={() => onVote(item.song.id)}
-            aria-label={`Vote for ${item.song.title}`}
-          >
-            <span className="text-[0.6rem] text-amber">▲</span>
-            <span className="font-mono text-[0.82rem] font-semibold">
-              {item.votes}
-            </span>
-          </button>
+          {(() => {
+            const voted = item.voters?.includes(myUserId) ?? false;
+            return (
+              <button
+                className={`flex flex-col items-center gap-0.5 rounded-[10px] border px-2 py-1.5 leading-none transition-colors ${
+                  voted
+                    ? "border-amber bg-amber/15 text-amber"
+                    : "border-line bg-surface2 hover:border-amber hover:bg-surface3"
+                }`}
+                onClick={() => onVote(item.song.id)}
+                aria-pressed={voted}
+                title={voted ? "Remove your vote" : "Vote"}
+                aria-label={`${voted ? "Remove your vote for" : "Vote for"} ${item.song.title}`}
+              >
+                <span className="text-[0.6rem] text-amber">▲</span>
+                <span className="font-mono text-[0.82rem] font-semibold">
+                  {item.votes}
+                </span>
+              </button>
+            );
+          })()}
           {canRemove && (
             <button
               className="rounded-lg p-1.5 text-[0.85rem] text-muted2 transition-colors hover:bg-surface2 hover:text-coral"

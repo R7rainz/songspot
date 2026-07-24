@@ -24,8 +24,12 @@ type Song struct {
 }
 
 type QueueItem struct {
-	Song  Song `json:"song"`
-	Votes int  `json:"votes"`
+	Song Song `json:"song"`
+	// Votes is the count, kept equal to len(Voters) so existing clients keep
+	// working. Voters holds the ids of who voted, to enforce one vote per user
+	// (and let the UI show/toggle a user's own vote).
+	Votes  int      `json:"votes"`
+	Voters []string `json:"voters"`
 }
 
 type RoomData struct {

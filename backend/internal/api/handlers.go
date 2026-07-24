@@ -410,6 +410,11 @@ func SetupRestRoutes(mux *http.ServeMux, rdb *redis.Client) {
 	mux.HandleFunc("POST /rooms/{roomID}/queue/{songID}/vote", func(w http.ResponseWriter, r *http.Request) {
 		roomID := r.PathValue("roomID")
 		songID := r.PathValue("songID")
+		userID := r.URL.Query().Get("userID")
+		if userID == "" {
+			http.Error(w, "userID is required", http.StatusBadRequest)
+			return
+		}
 
 		room, err := getRoom(roomID)
 		if err != nil {
@@ -419,11 +424,26 @@ func SetupRestRoutes(mux *http.ServeMux, rdb *redis.Client) {
 
 		found := false
 		for i := range room.Queue {
-			if room.Queue[i].Song.ID == songID {
-				room.Queue[i].Votes++
-				found = true
-				break
+			if room.Queue[i].Song.ID != songID {
+				continue
 			}
+			item := &room.Queue[i]
+			// One vote per user: toggle this user in/out of the voter set.
+			idx := -1
+			for k, v := range item.Voters {
+				if v == userID {
+					idx = k
+					break
+				}
+			}
+			if idx >= 0 {
+				item.Voters = append(item.Voters[:idx], item.Voters[idx+1:]...)
+			} else {
+				item.Voters = append(item.Voters, userID)
+			}
+			item.Votes = len(item.Voters)
+			found = true
+			break
 		}
 		if !found {
 			http.Error(w, "Song not found in queue", http.StatusNotFound)

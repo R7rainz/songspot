@@ -11,6 +11,7 @@ export interface Song {
 export interface QueueItem {
   song: Song;
   votes: number;
+  voters?: string[]; // user ids who voted — used to show/toggle your own vote
 }
 
 export interface RoomState {
