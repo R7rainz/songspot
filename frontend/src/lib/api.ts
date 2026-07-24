@@ -70,10 +70,11 @@ export const api = {
       method: "POST",
     }),
 
-  deleteSong: (roomID: string, songID: string) =>
-    request<QueueItem[]>(`/rooms/${roomID}/queue/${songID}`, {
-      method: "DELETE",
-    }),
+  deleteSong: (roomID: string, songID: string, userID: string) =>
+    request<QueueItem[]>(
+      `/rooms/${roomID}/queue/${songID}?userID=${encodeURIComponent(userID)}`,
+      { method: "DELETE" },
+    ),
 
   // Advances the queue; the backend returns the new RoomState (not full
   // RoomData), so callers should refetch the room after this. userID is checked

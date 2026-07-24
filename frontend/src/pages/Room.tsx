@@ -507,8 +507,11 @@ export function Room() {
             <Queue
               items={queue}
               pendingId={pendingId}
+              canRemove={canControl}
               onVote={(id) => mutateQueue(() => api.voteSong(roomID, id), id)}
-              onRemove={(id) => mutateQueue(() => api.deleteSong(roomID, id), id)}
+              onRemove={(id) =>
+                mutateQueue(() => api.deleteSong(roomID, id, userId), id)
+              }
             />
           </div>
 

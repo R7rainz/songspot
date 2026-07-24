@@ -5,10 +5,11 @@ interface Props {
   items: QueueItem[];
   onVote: (songID: string) => void;
   onRemove: (songID: string) => void;
+  canRemove: boolean;
   pendingId?: string | null;
 }
 
-export function Queue({ items, onVote, onRemove, pendingId }: Props) {
+export function Queue({ items, onVote, onRemove, canRemove, pendingId }: Props) {
   if (items.length === 0) {
     return (
       <div className="py-6 text-center">
@@ -59,14 +60,16 @@ export function Queue({ items, onVote, onRemove, pendingId }: Props) {
               {item.votes}
             </span>
           </button>
-          <button
-            className="rounded-lg p-1.5 text-[0.85rem] text-muted2 transition-colors hover:bg-surface2 hover:text-coral"
-            onClick={() => onRemove(item.song.id)}
-            aria-label={`Remove ${item.song.title}`}
-            title="Remove"
-          >
-            ✕
-          </button>
+          {canRemove && (
+            <button
+              className="rounded-lg p-1.5 text-[0.85rem] text-muted2 transition-colors hover:bg-surface2 hover:text-coral"
+              onClick={() => onRemove(item.song.id)}
+              aria-label={`Remove ${item.song.title}`}
+              title="Remove"
+            >
+              ✕
+            </button>
+          )}
         </li>
       ))}
     </ol>
