@@ -452,6 +452,12 @@ func SetupRestRoutes(mux *http.ServeMux, rdb *redis.Client) {
 			return
 		}
 
+		// Removing songs is a control action: host only, unless control is open.
+		if !mayControlPlayback(room, r.URL.Query().Get("userID")) {
+			http.Error(w, "Only the host can remove songs", http.StatusForbidden)
+			return
+		}
+
 		found := false
 		updatedQueue := []models.QueueItem{}
 		for _, item := range room.Queue {
