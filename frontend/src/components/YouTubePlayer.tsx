@@ -37,6 +37,9 @@ export const YouTubePlayer = forwardRef<PlayerHandle, Props>(
     const hostRef = useRef<HTMLDivElement>(null);
     const playerRef = useRef<YTPlayer | null>(null);
     const suppressRef = useRef(false);
+    // Set while the component unmounts, so the PAUSED/ENDED events YouTube fires
+    // during teardown don't get broadcast as a "pause"/skip to everyone else.
+    const tearingDownRef = useRef(false);
     const cbRef = useRef({ onUserPlay, onUserPause, onEnded, onReady });
     cbRef.current = { onUserPlay, onUserPause, onEnded, onReady };
     const [ready, setReady] = useState(false);
@@ -65,6 +68,7 @@ export const YouTubePlayer = forwardRef<PlayerHandle, Props>(
               cbRef.current.onReady?.();
             },
             onStateChange: (e: { data: number }) => {
+              if (tearingDownRef.current) return; // ignore unmount-induced events
               const player = playerRef.current;
               if (!player) return;
               if (e.data === YT_STATE.ENDED) {
@@ -83,6 +87,7 @@ export const YouTubePlayer = forwardRef<PlayerHandle, Props>(
 
       return () => {
         cancelled = true;
+        tearingDownRef.current = true;
         playerRef.current?.destroy();
         playerRef.current = null;
       };

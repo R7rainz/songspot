@@ -51,9 +51,6 @@ export function Room() {
   // would no-op the load yet still advance currentSongRef, leaving a joiner
   // stuck on a never-loaded video. Gate all syncing on this.
   const playerReadyRef = useRef(false);
-  // Mirror of room state for the drift-correction loop (reads it without
-  // re-subscribing the interval on every room change).
-  const roomRef = useRef<RoomData | null>(null);
 
   const rememberSongs = useCallback((items: QueueItem[]) => {
     for (const it of items) songMeta.current[it.song.id] = it.song;
@@ -117,7 +114,6 @@ export function Room() {
     },
   );
   serverNowRef.current = serverNow;
-  roomRef.current = room;
 
   // Initial load. Register a viewer session if we arrived without one so
   // reconnects reuse the same id (the backend has no auth anyway).
@@ -165,25 +161,10 @@ export function Room() {
     return () => clearInterval(t);
   }, [scrubbing]);
 
-  // Drift correction: keep everyone aligned to the shared playhead. When a video
-  // loads it buffers, so a joiner starts a beat behind and — with nothing else
-  // re-seeking — stays behind. Every few seconds we compare the player's actual
-  // position to where the room says it should be, and only seek if the gap is
-  // big (threshold-gated so normal playback never stutters from this).
-  useEffect(() => {
-    const t = setInterval(() => {
-      const p = playerRef.current;
-      const r = roomRef.current;
-      if (!p || !playerReadyRef.current || !r?.state.currentSong) return;
-      if (!r.state.isPlaying || p.getState() !== 1) return; // only while truly playing
-      const expected =
-        (r.state.syncTimeMs + (serverNowRef.current() - r.state.updatedAt)) / 1000;
-      if (expected >= 0 && Math.abs(expected - p.getTime()) > 1.5) {
-        p.seekTo(expected);
-      }
-    }, 3000);
-    return () => clearInterval(t);
-  }, []);
+  // (Removed the periodic drift-correction loop: seeking to the live playhead
+  // re-buffered the video each tick and could jump to the start when the clock
+  // estimate was off. Everyone aligns on song load / play / pause / seek / skip,
+  // and a small amount of drift is preferable to constant buffering.)
 
   // Apply per-listener volume/mute to the player and remember the choice.
   useEffect(() => {
