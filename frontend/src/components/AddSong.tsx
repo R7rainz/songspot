@@ -44,6 +44,15 @@ export function AddSong({ roomID, canPlayNow, onChanged, onPlayNow }: Props) {
     }
 
     const mode = detectMode(q);
+    // Wait for a couple of characters before hitting the backend on plain text,
+    // so single-letter keystrokes don't fire a search.
+    if (mode === "search" && q.length < 2) {
+      setResults([]);
+      setPlaylist(null);
+      setStatus("idle");
+      return;
+    }
+
     const id = ++reqId.current;
     setStatus("loading");
     setPlaylist(null);
@@ -208,7 +217,7 @@ export function AddSong({ roomID, canPlayNow, onChanged, onPlayNow }: Props) {
 
       {status === "idle" &&
         !error &&
-        query.trim() &&
+        query.trim().length >= 2 &&
         !playlist &&
         results.length === 0 && (
           <p className="mt-3 text-[0.82rem] text-muted2">No results.</p>
