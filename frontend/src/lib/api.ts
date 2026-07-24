@@ -65,10 +65,12 @@ export const api = {
       body: JSON.stringify(song),
     }),
 
-  voteSong: (roomID: string, songID: string) =>
-    request<QueueItem[]>(`/rooms/${roomID}/queue/${songID}/vote`, {
-      method: "POST",
-    }),
+  // Toggles this user's vote (one per user per song).
+  voteSong: (roomID: string, songID: string, userID: string) =>
+    request<QueueItem[]>(
+      `/rooms/${roomID}/queue/${songID}/vote?userID=${encodeURIComponent(userID)}`,
+      { method: "POST" },
+    ),
 
   deleteSong: (roomID: string, songID: string, userID: string) =>
     request<QueueItem[]>(

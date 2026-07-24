@@ -534,9 +534,12 @@ export function Room() {
             </div>
             <Queue
               items={queue}
+              myUserId={userId}
               pendingId={pendingId}
               canRemove={canControl}
-              onVote={(id) => mutateQueue(() => api.voteSong(roomID, id), id)}
+              onVote={(id) =>
+                mutateQueue(() => api.voteSong(roomID, id, userId), id)
+              }
               onRemove={(id) =>
                 mutateQueue(() => api.deleteSong(roomID, id, userId), id)
               }
