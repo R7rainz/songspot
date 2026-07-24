@@ -47,6 +47,10 @@ export function Room() {
   const songMeta = useRef<Record<string, Song>>({});
   const currentSongRef = useRef<string>("");
   const serverNowRef = useRef<() => number>(() => Date.now());
+  // The YouTube player is constructed asynchronously; syncing before it's ready
+  // would no-op the load yet still advance currentSongRef, leaving a joiner
+  // stuck on a never-loaded video. Gate all syncing on this.
+  const playerReadyRef = useRef(false);
 
   const rememberSongs = useCallback((items: QueueItem[]) => {
     for (const it of items) songMeta.current[it.song.id] = it.song;
@@ -56,7 +60,7 @@ export function Room() {
   const syncPlayerToState = useCallback((data: RoomData) => {
     const s = data.state;
     const player = playerRef.current;
-    if (!player || !s.currentSong) return;
+    if (!player || !playerReadyRef.current || !s.currentSong) return;
     const elapsed = s.isPlaying ? serverNowRef.current() - s.updatedAt : 0;
     const startSec = Math.max(0, (s.syncTimeMs + elapsed) / 1000);
     if (s.currentSong !== currentSongRef.current) {
@@ -332,6 +336,7 @@ export function Room() {
             <YouTubePlayer
               ref={playerRef}
               onReady={() => {
+                playerReadyRef.current = true;
                 setPlayerReady(true);
                 if (room) syncPlayerToState(room);
               }}
