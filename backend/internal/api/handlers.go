@@ -9,15 +9,14 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"songspot/internal/models"
+	"songspot/internal/music"
+	"songspot/internal/ws"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-
-	"songspot/internal/models"
-	"songspot/internal/music"
-	"songspot/internal/ws"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -679,5 +678,48 @@ func SetupRestRoutes(mux *http.ServeMux, rdb *redis.Client) {
 			return
 		}
 		writeJSON(w, http.StatusOK, room.State)
+	})
+
+	// Host-only: remove a participant from the room and tell their client to leave.
+	mux.HandleFunc("DELETE /rooms/{roomID}/users/{userID}", func(w http.ResponseWriter, r *http.Request) {
+		roomID := r.PathValue("roomID")
+		targetID := r.PathValue("userID")
+		requesterID := r.URL.Query().Get("requesterID")
+
+		room, err := getRoom(roomID)
+		if err != nil {
+			http.Error(w, "Room not found", http.StatusNotFound)
+			return
+		}
+
+		if requesterID != room.State.HostID {
+			http.Error(w, "Only the host can remove people", http.StatusForbidden)
+			return
+		}
+		if targetID == room.State.HostID {
+			http.Error(w, "The host can't be removed", http.StatusBadRequest)
+			return
+		}
+
+		kept := make([]string, 0, len(room.Users))
+		for _, u := range room.Users {
+			if u != targetID {
+				kept = append(kept, u)
+			}
+		}
+		room.Users = kept
+
+		if err := saveRoom(roomID, room); err != nil {
+			http.Error(w, "Failed to update room", http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, room.Users)
+
+		event, _ := json.Marshal(models.WSEvent{
+			Action:    "kicked",
+			Data:      map[string]any{"userID": targetID},
+			Timestamp: time.Now().UnixMilli(),
+		})
+		rdb.Publish(ctx, "room_events:"+roomID, event)
 	})
 }
