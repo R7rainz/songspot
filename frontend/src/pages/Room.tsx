@@ -51,25 +51,27 @@ export function Room() {
   // would no-op the load yet still advance currentSongRef, leaving a joiner
   // stuck on a never-loaded video. Gate all syncing on this.
   const playerReadyRef = useRef(false);
+  // Mirror of room state for the drift-correction loop (reads it without
+  // re-subscribing the interval on every room change).
+  const roomRef = useRef<RoomData | null>(null);
 
   const rememberSongs = useCallback((items: QueueItem[]) => {
     for (const it of items) songMeta.current[it.song.id] = it.song;
   }, []);
 
-  // Align the player to the shared playhead described by room state.
+  // Load the current song when it *changes* (join, skip, play-now). We
+  // deliberately do nothing when it's unchanged: a queue add/vote/remove leaves
+  // currentSong the same, and re-seeking a playing video here would make it
+  // stutter. Live play/pause/seek are handled separately by applyRemotePlayback.
   const syncPlayerToState = useCallback((data: RoomData) => {
     const s = data.state;
     const player = playerRef.current;
     if (!player || !playerReadyRef.current || !s.currentSong) return;
+    if (s.currentSong === currentSongRef.current) return;
+    currentSongRef.current = s.currentSong;
     const elapsed = s.isPlaying ? serverNowRef.current() - s.updatedAt : 0;
     const startSec = Math.max(0, (s.syncTimeMs + elapsed) / 1000);
-    if (s.currentSong !== currentSongRef.current) {
-      currentSongRef.current = s.currentSong;
-      player.load(s.currentSong, startSec, s.isPlaying);
-    } else if (s.isPlaying) {
-      player.seekTo(startSec);
-      player.play();
-    }
+    player.load(s.currentSong, startSec, s.isPlaying);
     setPlaying(s.isPlaying);
   }, []);
 
@@ -115,6 +117,7 @@ export function Room() {
     },
   );
   serverNowRef.current = serverNow;
+  roomRef.current = room;
 
   // Initial load. Register a viewer session if we arrived without one so
   // reconnects reuse the same id (the backend has no auth anyway).
@@ -161,6 +164,26 @@ export function Room() {
     }, 500);
     return () => clearInterval(t);
   }, [scrubbing]);
+
+  // Drift correction: keep everyone aligned to the shared playhead. When a video
+  // loads it buffers, so a joiner starts a beat behind and — with nothing else
+  // re-seeking — stays behind. Every few seconds we compare the player's actual
+  // position to where the room says it should be, and only seek if the gap is
+  // big (threshold-gated so normal playback never stutters from this).
+  useEffect(() => {
+    const t = setInterval(() => {
+      const p = playerRef.current;
+      const r = roomRef.current;
+      if (!p || !playerReadyRef.current || !r?.state.currentSong) return;
+      if (!r.state.isPlaying || p.getState() !== 1) return; // only while truly playing
+      const expected =
+        (r.state.syncTimeMs + (serverNowRef.current() - r.state.updatedAt)) / 1000;
+      if (expected >= 0 && Math.abs(expected - p.getTime()) > 1.5) {
+        p.seekTo(expected);
+      }
+    }, 3000);
+    return () => clearInterval(t);
+  }, []);
 
   // Apply per-listener volume/mute to the player and remember the choice.
   useEffect(() => {
