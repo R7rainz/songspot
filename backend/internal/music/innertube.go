@@ -117,6 +117,44 @@ func (c *InnerTube) Playlist(ctx context.Context, playlistID string) ([]models.S
 	return songs, nil
 }
 
+// Mix returns the tracks of a YouTube "Mix" / radio playlist (ids starting with
+// RD). Mixes are generated on the fly from a seed video, so they aren't listed
+// on the static playlist page — they come from the watch page's "up next" panel
+// via the `next` endpoint. seedVideoID is the video the mix is built around
+// (the `v=` in the URL); for RD{videoId} mixes we can recover it from the id.
+func (c *InnerTube) Mix(ctx context.Context, playlistID, seedVideoID string) ([]models.Song, error) {
+	if seedVideoID == "" && len(playlistID) == 13 && strings.HasPrefix(playlistID, "RD") {
+		seedVideoID = playlistID[2:] // RD + 11-char video id
+	}
+	if seedVideoID == "" {
+		return nil, fmt.Errorf("a mix needs a seed video; open the mix and copy the full watch URL (with v=)")
+	}
+	root, err := c.post(ctx, "/next", map[string]any{
+		"context":    clientContext(),
+		"videoId":    seedVideoID,
+		"playlistId": playlistID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return extractSongs(root, "playlistPanelVideoRenderer", maxPlaylistSongs), nil
+}
+
+// IsMixPlaylist reports whether a playlist id is a YouTube-generated Mix/radio.
+func IsMixPlaylist(playlistID string) bool {
+	return strings.HasPrefix(playlistID, "RD")
+}
+
+// ParseSeedVideoID pulls the `v=` video id out of a URL (the mix's seed).
+func ParseSeedVideoID(raw string) string {
+	if u, err := url.Parse(strings.TrimSpace(raw)); err == nil {
+		if v := u.Query().Get("v"); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
 // post sends an InnerTube API request and returns the decoded JSON as a generic
 // tree (map/slice), which the parsers walk. Working with a generic tree keeps
 // parsing resilient to YouTube's frequent, deeply-nested layout changes.

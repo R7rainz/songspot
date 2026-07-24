@@ -16,7 +16,7 @@ interface Props {
 type Mode = "search" | "video" | "playlist";
 
 function detectMode(input: string): Mode {
-  if (/[?&]list=/.test(input) || /^(PL|OLAK5uy|RDCLAK|FL|UU)[\w-]{10,}$/.test(input)) {
+  if (/[?&]list=/.test(input) || /^(PL|OLAK5uy|RD|FL|UU)[\w-]{10,}$/.test(input)) {
     return "playlist";
   }
   if (parseVideoId(input)) return "video";

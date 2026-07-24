@@ -552,14 +552,24 @@ func SetupRestRoutes(mux *http.ServeMux, rdb *redis.Client) {
 		writeJSON(w, http.StatusOK, songs)
 	})
 
-	// Preview a YouTube playlist's tracks without mutating any room.
+	// Preview a YouTube playlist's tracks without mutating any room. Handles both
+	// regular playlists and YouTube-generated Mixes (RD…), which are resolved
+	// differently (Mixes come from the seed video's "up next" panel).
 	mux.HandleFunc("GET /playlist", func(w http.ResponseWriter, r *http.Request) {
-		playlistID := music.ParsePlaylistID(r.URL.Query().Get("url"))
+		raw := r.URL.Query().Get("url")
+		playlistID := music.ParsePlaylistID(raw)
 		if playlistID == "" {
 			http.Error(w, "a valid playlist url is required", http.StatusBadRequest)
 			return
 		}
-		songs, err := musicProvider.Playlist(r.Context(), playlistID)
+
+		var songs []models.Song
+		var err error
+		if music.IsMixPlaylist(playlistID) {
+			songs, err = musicProvider.Mix(r.Context(), playlistID, music.ParseSeedVideoID(raw))
+		} else {
+			songs, err = musicProvider.Playlist(r.Context(), playlistID)
+		}
 		if err != nil {
 			log.Printf("playlist %q failed: %v", playlistID, err)
 			http.Error(w, "Couldn't load that playlist", http.StatusBadGateway)
