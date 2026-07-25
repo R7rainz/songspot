@@ -388,11 +388,23 @@ func SetupRestRoutes(mux *http.ServeMux, rdb *redis.Client) {
 			http.Error(w, "Invalid song data", http.StatusBadRequest)
 			return
 		}
+		if newSong.ID == "" {
+			http.Error(w, "song id is required", http.StatusBadRequest)
+			return
+		}
 
 		room, err := getRoom(roomID)
 		if err != nil {
 			http.Error(w, "Room not found", http.StatusNotFound)
 			return
+		}
+
+		// Don't queue the same song twice — the vote is how you push it up.
+		for _, item := range room.Queue {
+			if item.Song.ID == newSong.ID {
+				http.Error(w, "That song is already in the queue", http.StatusConflict)
+				return
+			}
 		}
 
 		room.Queue = append(room.Queue, models.QueueItem{
