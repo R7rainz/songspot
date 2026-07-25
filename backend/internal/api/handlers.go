@@ -180,7 +180,7 @@ func SetupRestRoutes(mux *http.ServeMux, rdb *redis.Client) {
 			return
 		}
 
-		if err := rdb.Set(ctx, roomKey, data, 0).Err(); err != nil {
+		if err := rdb.Set(ctx, roomKey, data, models.RoomTTL).Err(); err != nil {
 			http.Error(w, "Failed to save room to Redis", http.StatusInternalServerError)
 			return
 		}
@@ -336,7 +336,7 @@ func SetupRestRoutes(mux *http.ServeMux, rdb *redis.Client) {
 				http.Error(w, "Internal server error", http.StatusInternalServerError)
 				return
 			}
-			if err := rdb.Set(ctx, roomKey, updatedRoomData, 0).Err(); err != nil {
+			if err := rdb.Set(ctx, roomKey, updatedRoomData, models.RoomTTL).Err(); err != nil {
 				http.Error(w, "Failed to update room", http.StatusInternalServerError)
 				return
 			}
@@ -367,7 +367,7 @@ func SetupRestRoutes(mux *http.ServeMux, rdb *redis.Client) {
 		if err != nil {
 			return err
 		}
-		return rdb.Set(ctx, roomKey, data, 0).Err()
+		return rdb.Set(ctx, roomKey, data, models.RoomTTL).Err()
 	}
 
 	mux.HandleFunc("GET /rooms/{roomID}/queue", func(w http.ResponseWriter, r *http.Request) {

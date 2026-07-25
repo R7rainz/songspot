@@ -119,7 +119,7 @@ func (c *Client) ReadPump() {
 				continue
 			}
 
-			if err := c.Hub.redisClient.Set(ctx, roomKey, updatedRoomData, 0).Err(); err != nil {
+			if err := c.Hub.redisClient.Set(ctx, roomKey, updatedRoomData, models.RoomTTL).Err(); err != nil {
 				log.Printf("Failed to update room state: %v", err)
 				continue
 			}

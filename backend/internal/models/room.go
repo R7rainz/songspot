@@ -1,5 +1,13 @@
 package models
 
+import "time"
+
+// RoomTTL bounds how long an idle room lingers in Redis. Every write refreshes
+// it, so a room in use never expires; an abandoned one is reclaimed a day later
+// instead of accumulating forever. Always pass this when writing a room key —
+// writing with no expiry would clear the TTL and make the room permanent.
+const RoomTTL = 24 * time.Hour
+
 type RoomState struct {
 	RoomID      string `json:"roomID"`
 	HostID      string `json:"hostID"`
