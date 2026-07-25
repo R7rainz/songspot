@@ -2,7 +2,11 @@ package ws
 
 import (
 	"context"
+	"encoding/json"
 	"log"
+	"time"
+
+	"songspot/internal/models"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -43,11 +47,13 @@ func (h *Hub) Run() {
 		select {
 		case client := <-h.Register:
 			h.Clients[client] = true
+			h.broadcastPresence()
 
 		case client := <-h.Unregister:
 			if _, ok := h.Clients[client]; ok {
 				delete(h.Clients, client)
 				close(client.Send)
+				h.broadcastPresence()
 			}
 
 		case message := <-h.Broadcast:
@@ -62,6 +68,38 @@ func (h *Hub) Run() {
 					delete(h.Clients, client)
 				}
 			}
+		}
+	}
+}
+
+// broadcastPresence tells everyone in the room how many people are currently
+// connected. Counting live sockets (deduped by user, so multiple tabs count
+// once) is the truth about who's listening — the room's Users list is a roster
+// that only grows, so it can't answer this.
+//
+// Called from Run's loop; sends are non-blocking so a slow client can't stall
+// the hub. Note this covers clients on this server instance, which is accurate
+// for a single-instance deployment; scaling out would need Redis pub/sub here.
+func (h *Hub) broadcastPresence() {
+	users := make(map[string]struct{}, len(h.Clients))
+	for client := range h.Clients {
+		users[client.UserID] = struct{}{}
+	}
+
+	msg, err := json.Marshal(models.WSEvent{
+		Action:    "presence",
+		Data:      map[string]any{"count": len(users)},
+		Timestamp: time.Now().UnixMilli(),
+	})
+	if err != nil {
+		log.Printf("failed to encode presence event: %v", err)
+		return
+	}
+
+	for client := range h.Clients {
+		select {
+		case client.Send <- msg:
+		default: // buffer full — skip, they'll get the next update
 		}
 	}
 }

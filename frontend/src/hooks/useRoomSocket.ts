@@ -18,6 +18,8 @@ export type ConnState = "connecting" | "open" | "closed";
 interface Handlers {
   onPlayback?: (action: PlaybackAction, syncTimeMs: number, serverTime: number) => void;
   onQueueUpdated?: () => void;
+  /** Live count of people connected to the room. */
+  onPresence?: (count: number) => void;
 }
 
 /**
@@ -88,6 +90,9 @@ export function useRoomSocket(
             break;
           case QUEUE_UPDATED:
             handlersRef.current.onQueueUpdated?.();
+            break;
+          case "presence":
+            handlersRef.current.onPresence?.(Number(msg.data.count) || 0);
             break;
         }
       };

@@ -33,6 +33,8 @@ export function Room() {
   const [scrubbing, setScrubbing] = useState<number | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [playerReady, setPlayerReady] = useState(false);
+  // Live count of connected listeners, pushed by the server over the socket.
+  const [listeners, setListeners] = useState(0);
   // Volume is per-listener (local only, never broadcast) and remembered.
   const [volume, setVolume] = useState(() => {
     const v = Number(localStorage.getItem("songspot.volume"));
@@ -111,6 +113,7 @@ export function Room() {
       onQueueUpdated: () => {
         refetch().then(syncPlayerToState).catch(() => {});
       },
+      onPresence: setListeners,
     },
   );
   serverNowRef.current = serverNow;
@@ -293,7 +296,6 @@ export function Room() {
   }
 
   const shownTime = scrubbing ?? current;
-  const listeners = room?.users.length ?? 0;
   const hasSong = Boolean(room?.state.currentSong);
 
   return (
@@ -320,7 +322,8 @@ export function Room() {
                 ? "Connecting…"
                 : "Reconnecting…"}
           </span>
-          <span className="pill">{listeners} listening</span>
+          {/* You're always here, so never show 0 before the first update. */}
+          <span className="pill">{Math.max(listeners, 1)} listening</span>
         </div>
       </header>
 
