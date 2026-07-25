@@ -21,7 +21,6 @@ export function Room() {
   const { roomID = "" } = useParams();
   const session = useMemo(() => getSession(roomID), [roomID]);
   const userId = session?.userId ?? getMyId();
-  const isHost = session?.isHost ?? false;
 
   const playerRef = useRef<PlayerHandle>(null);
   const [room, setRoom] = useState<RoomData | null>(null);
@@ -182,6 +181,9 @@ export function Room() {
     ? (songMeta.current[room.state.currentSong]?.title ?? "Now playing")
     : null;
 
+  // Host identity comes from room state, not localStorage: the server is the
+  // authority, so this stays right even if local session data is stale or absent.
+  const isHost = !!room && room.state.hostID === userId;
   // The host always controls playback; everyone else only when handed the mic.
   const everyoneControls = room?.state.everyoneControls ?? false;
   const canControl = isHost || everyoneControls;
