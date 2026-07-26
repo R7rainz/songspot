@@ -2,23 +2,30 @@
 
 The web client for SongSpot — a collaborative listening room where everyone
 shares one queue and one synced playhead. Built against the Go backend
-documented in [`../backend/agent.md`](../backend/AGENT.md).
+documented in [`../backend/agent.md`](../backend/agent.md).
 
 ## Stack
 
 - **React 18 + TypeScript + Vite**
 - **React Router** for the Home / Join / Room flows
 - **YouTube IFrame Player API** for playback
+- **Three.js** for the lazy-loaded room atmosphere
 - **Tailwind CSS v4** — design tokens and primitives in `src/styles.css`
 
 ## Design
 
-"SongSpot = spotlight." A dark listening-lounge stage lit by a warm
-amber→coral accent gradient. The signature element is the **equalizer mark**
-(also the logo) that pulses while audio plays.
+SongSpot uses a dark, Gruvbox-inspired console system: charcoal surfaces, warm
+cream text, firm outlines, and restrained yellow, orange, and green accents.
+The player cabinet remains the visual anchor, while surface contrast separates
+controls from the room background. Its VU bank is the volume control: click or
+drag across it, or focus it and use the arrow keys. Search results and queue
+entries use compact cassette-cartridge rows, while the landing preview is a
+separate tabletop tape deck.
 
-- **Type:** Bricolage Grotesque (display) · Inter (body) · JetBrains Mono (timecodes/counts)
-- **Palette:** graphite neutrals with an `#ffb84d → #ff5d8f` accent gradient
+- **Type:** Space Grotesk (display), Inter (body), IBM Plex Mono (codes/time)
+- **Surfaces:** compact charcoal panels around a near-black player cabinet
+- **Depth:** thin edges, inset hardware details, and layered shadows
+- **Motion:** equalizers and the WebGL room scene respect reduced-motion settings
 
 ## Run it
 
@@ -116,6 +123,6 @@ Because `/r/:code` is the only place that joins, the room page can take
 src/
   lib/        api client, types, storage, room codes, YouTube helpers
   hooks/      useRoomSocket — WS, reconnect, clock offset, room events
-  components/ YouTubePlayer, EqualizerMark, AddSong, Queue, SharePanel
+  components/ YouTubePlayer, Brand, EqualizerMark, AddSong, Queue, SharePanel
   pages/      Home, Join, Room
 ```
