@@ -61,24 +61,17 @@ func isAllowedWebSocketOrigin(r *http.Request) bool {
 }
 
 var (
-	hubs      = make(map[string]*ws.Hub)
-	hubsMutex sync.Mutex
+	registryOnce sync.Once
+	hubRegistry  *ws.Registry
 )
 
-func GetOrCreateHub(roomID string, redisClient *redis.Client) *ws.Hub {
-	hubsMutex.Lock()
-	defer hubsMutex.Unlock()
-
-	if hub, exists := hubs[roomID]; exists {
-		return hub
-	}
-
-	hub := ws.NewHub(roomID, redisClient)
-	hubs[roomID] = hub
-
-	// Start the hub's local event look and redis listener
-	go hub.Run()
-	return hub
+// hubs returns the process-wide hub registry, which owns each room's hub and
+// its lifetime.
+func hubs(redisClient *redis.Client) *ws.Registry {
+	registryOnce.Do(func() {
+		hubRegistry = ws.NewRegistry(redisClient)
+	})
+	return hubRegistry
 }
 
 // handles the initial GET request and upgrades it to a websocket
@@ -94,16 +87,8 @@ func ServerWs(w http.ResponseWriter, r *http.Request, roomID string, userID stri
 		return
 	}
 
-	hub := GetOrCreateHub(roomID, redisClient)
-
-	client := &ws.Client{
-		Hub:    hub,
-		UserID: userID,
-		Conn:   conn,
-		Send:   make(chan []byte, 256),
-	}
-
-	client.Hub.Register <- client
+	client := ws.NewClient(userID, conn)
+	hubs(redisClient).Join(roomID, client)
 
 	go client.WritePump()
 	go client.ReadPump()
