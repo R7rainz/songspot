@@ -38,26 +38,30 @@ when the backend stamped that event.
 ## What Exists Today
 
 - HTTP server using Go's standard `net/http` `ServeMux`.
-- Redis-backed room creation and room lookup.
-- Invite creation and invite join flow.
+- Short, speakable room codes (`K4M9TQ`) that double as the join credential.
+- Redis-backed room creation, lookup, and join-by-code.
 - Queue add, get, vote, delete, batch import, and next-track routes.
 - "Play now" route for immediately selecting a song.
+- Host-only playback control, with a switch to open it to everyone.
 - Keyless YouTube search through YouTube's internal InnerTube API.
 - Playlist preview/import support through parsed YouTube playlist data.
-- WebSocket room hubs with Redis Pub/Sub fan-out.
-- Basic playback sync for `play`, `pause`, and `seek` events.
-- Parser tests for the fragile YouTube response mapping code.
+- WebSocket room hubs with Redis Pub/Sub fan-out, started on the first listener
+  and torn down after the last one leaves.
+- Playback sync for `play`, `pause`, and `seek` events.
+- Server-side broadcasts of queue and state changes after REST mutations.
+- Full current-song metadata in room state, so late joiners can name what's on.
+- Invite tokens, kept working for links shared before room codes existed.
+- Parser tests for the fragile YouTube response mapping code, plus room-code and
+  playhead tests.
 
 ## What Does Not Exist Yet
 
-- Real authentication.
-- Host/admin permissions.
+- Real authentication. Anyone with a room code can join and mutate the queue.
 - Rate limiting or spam protection.
-- Atomic queue/invite mutations under concurrent writes.
-- Queue REST mutations broadcasting WebSocket `queue:updated` events.
+- Atomic queue/invite mutations under concurrent writes. Handlers still do
+  read-modify-write on the whole room blob.
 - Official YouTube Data API integration.
-- Full current-song metadata in room state. `currentSong` is currently just the
-  YouTube video ID.
+- Presence that spans more than one server instance.
 
 ## Tech Stack
 
@@ -79,17 +83,17 @@ backend/
     api/
       handlers.go            # REST routes and websocket upgrade handler
     models/
-      room.go                # room, song, queue models
+      room.go                # room, song, queue models + playhead maths
+      roomcode.go            # room code generation and normalisation
+      roomcode_test.go       # code + playhead tests
       eventSync.go           # websocket event models
     music/
       search.go              # Provider interface
       innertube.go           # YouTube InnerTube implementation
       innertube_test.go      # parser tests
       testdata/search.json   # fixture for parser tests
-    redis/
-      client.go              # older Redis helper methods
     ws/
-      hub.go                 # room hub and Redis Pub/Sub listener
+      hub.go                 # hub registry, room hub, Redis Pub/Sub listener
       client.go              # websocket read/write pumps
   docker-compose.yml         # local Redis
   go.mod
@@ -156,17 +160,42 @@ go run ./cmd
 
 ```go
 type RoomState struct {
-    RoomID      string `json:"roomID"`
-    HostID      string `json:"hostID"`
-    CurrentSong string `json:"currentSong"`
-    IsPlaying   bool   `json:"isPlaying"`
-    SyncTimeMs  int64  `json:"syncTimeMs"`
-    UpdatedAt   int64  `json:"updatedAt"`
+    RoomID           string `json:"roomID"`
+    HostID           string `json:"hostID"`
+    CurrentSong      string `json:"currentSong"`
+    NowPlaying       *Song  `json:"nowPlaying,omitempty"`
+    IsPlaying        bool   `json:"isPlaying"`
+    SyncTimeMs       int64  `json:"syncTimeMs"`
+    UpdatedAt        int64  `json:"updatedAt"`
+    EveryoneControls bool   `json:"everyoneControls"`
 }
 ```
 
 `UpdatedAt` is Unix milliseconds from the backend server clock. `SyncTimeMs` is
-the desired playback position in the current song.
+the playback position within the current song *as of `UpdatedAt`* — the two are
+an anchor pair, not independent values. A room that is still playing has moved
+on since, which is what `RoomState.PlayheadMs` works out. Changing one without
+the other makes every listener's playhead jump.
+
+`NowPlaying` carries the full metadata for `CurrentSong`. Songs leave the queue
+when they start playing, so without it a listener who arrived mid-song has no
+way to name what they're hearing.
+
+`EveryoneControls` opens playback to all participants. When false (the default)
+only the host can play, pause, seek, skip, remove songs, or play-now. Everyone
+can always add songs and vote.
+
+### Room Codes
+
+Room ids are six characters from `23456789BCDFGHJKMNPQRSTVWXZ` — no `0`/`O`, no
+`1`/`I`/`L`, and no vowels, so a code can be read down a phone line and can't
+accidentally spell a word. Codes are claimed with `SETNX`, so two rooms created
+at the same instant can't collide.
+
+Ids are normalised on the way in (`models.NormalizeRoomID`): case-insensitive,
+and spaces/dashes are stripped, so `k4m 9tq` and `K4M-9TQ` both reach `K4M9TQ`.
+Rooms created before short codes have uuid-derived ids like `room_a1b2c3d4`;
+those still resolve.
 
 ### Song
 
@@ -211,10 +240,10 @@ updates because handlers do read-modify-write on the whole room object.
 | `room_events:{roomID}` | Pub/Sub channel | WebSocket hub | Broadcast events to all room clients |
 | `search:{limit}:{query}` | string JSON | Search route | Cached YouTube search results for 1 hour |
 
-There are older helper methods in `internal/redis/client.go` that use more
-granular keys like `room:{roomID}:queue`, `room:{roomID}:state`, and
-`song:{youtubeID}`. The current REST routes mostly use `room:{roomID}` JSON
-instead.
+Room keys carry a 24-hour TTL that every write refreshes, so a room in use never
+expires and an abandoned one is reclaimed rather than kept forever. Always pass
+`models.RoomTTL` when writing a room key — writing with no expiry clears the TTL
+and makes the room permanent.
 
 ## REST API
 
@@ -249,12 +278,13 @@ Response: `201 Created`
 ```json
 {
   "state": {
-    "roomID": "room_abcd1234",
+    "roomID": "K4M9TQ",
     "hostID": "host_123",
     "currentSong": "",
     "isPlaying": false,
-    "syncTimeMs": 1720000000000,
-    "updatedAt": 1720000000000
+    "syncTimeMs": 0,
+    "updatedAt": 1720000000000,
+    "everyoneControls": false
   },
   "queue": [],
   "users": ["host_123"]
@@ -271,7 +301,43 @@ GET /rooms/{roomID}
 
 Returns the full `RoomData` object.
 
+### Join By Room Code
+
+```txt
+POST /rooms/{roomID}/join
+```
+
+The main way into a room. Confirms the room exists before a client opens a
+socket, and adds the caller to the roster.
+
+Request body is optional:
+
+```json
+{
+  "userID": "user_a1b2c3"
+}
+```
+
+Pass a `userID` you already hold to keep the same identity — and therefore the
+same votes, and the host's control — across a refresh. Omit it to be assigned a
+fresh one.
+
+Response: `200 OK`
+
+```json
+{
+  "roomId": "K4M9TQ",
+  "userId": "user_a1b2c3"
+}
+```
+
+`roomId` is the canonical form of the code, which may differ from what was sent
+(`k4m 9tq` in, `K4M9TQ` out).
+
 ### Create Invite
+
+Invite tokens predate room codes and are no longer how the UI shares a room.
+They stay so links handed out earlier keep working.
 
 ```txt
 POST /rooms/{roomID}/invites
@@ -467,12 +533,34 @@ Response: updated queue.
 POST /rooms/{roomID}/queue/next
 ```
 
+Request body is optional:
+
+```json
+{
+  "userID": "user_a1b2c3",
+  "afterSongID": "currentYoutubeVideoId"
+}
+```
+
 The first queue item becomes the current song:
 
-- `state.currentSong` becomes the first song ID.
+- `state.currentSong` and `state.nowPlaying` become the first song.
 - `state.isPlaying` becomes `true`.
 - `state.syncTimeMs` becomes `0`.
 - the first item is removed from the queue.
+
+`afterSongID` names the song the caller believes is playing, and is what makes
+automatic end-of-song advancing safe. Two things follow from setting it:
+
+1. The call only advances if that song is still current. So every client in the
+   room can fire it the moment a track ends, and the queue still moves exactly
+   one step — the first wins and the rest get back the settled state.
+2. A track that has genuinely run past its own duration may be advanced by any
+   listener, even in a host-only room. Without this a room whose host closed
+   their tab would sit on a finished song forever. Songs with an unknown
+   duration can't be proven finished, so they stay host-only.
+
+Manual skips (no `afterSongID`) always require playback permission.
 
 Response: updated `RoomState`.
 
@@ -602,38 +690,32 @@ Current behavior:
 
 - `play` sets `isPlaying = true`.
 - `pause` sets `isPlaying = false`.
-- `seek` also sets `isPlaying = false` because the current logic only checks
-  whether the action is exactly `play`.
+- `seek` leaves `isPlaying` alone, so dragging the scrubber doesn't stop the
+  room. (It used to pause it, because the logic only asked whether the action
+  was exactly `play`.)
 
-If the frontend wants seek to preserve playback state, extend the payload:
+Events from a non-host are dropped unless `everyoneControls` is set.
 
-```json
-{
-  "action": "seek",
-  "data": {
-    "syncTimeMs": 42000,
-    "isPlaying": true
-  }
-}
-```
+### Server-Sent Room Events
 
-Then update the backend to use `data.isPlaying`.
+The backend publishes these after REST mutations, so listeners neither poll nor
+depend on the mutating client to announce its own change over its socket:
+
+| Action | Data | Sent after |
+| --- | --- | --- |
+| `queue:updated` | `{"queue": [...]}` | add, batch, vote, delete, next |
+| `state:updated` | `{"state": {...}}` | next, play-now, control toggle |
+| `presence` | `{"count": 3}` | anyone joining or leaving the socket |
+| `kicked` | `{"userID": "user_x"}` | the host removing a participant |
+
+Each event carries the new value rather than a bare "something changed" nudge,
+so a vote in a room of ten doesn't turn into ten refetches. `presence` counts
+live sockets deduped by user, so one person's two tabs count once.
 
 ### Pass-Through Events
 
-Any non-`ping` and non-playback-sync event is published unchanged:
-
-```json
-{
-  "action": "chat",
-  "data": {
-    "message": "hello"
-  },
-  "timestamp": 0
-}
-```
-
-There is no schema validation for arbitrary custom actions yet.
+Any other event is published to the room unchanged. There is no schema
+validation for custom actions yet.
 
 ## How InnerTube Search Works
 
@@ -682,18 +764,24 @@ most brittle response-walking logic has some coverage.
 
 Recommended happy path:
 
-1. Create room with `POST /rooms`.
-2. Store returned `roomID` and `hostID`.
-3. Create invite with `POST /rooms/{roomID}/invites`.
-4. Friend opens frontend invite URL.
-5. Frontend calls `POST /invites/{token}/join`.
-6. Store returned `roomId` and `userId`.
-7. Connect WebSocket with `/ws?roomID={roomId}&userID={userId}`.
-8. Fetch room with `GET /rooms/{roomID}`.
-9. Search songs with `GET /search?q=...`.
-10. Add selected songs with `POST /rooms/{roomID}/queue`.
-11. Optionally import playlists with `GET /playlist` and `POST /queue/batch`.
-12. Control playback through WebSocket `play`, `pause`, and `seek`.
+1. Create room with `POST /rooms`. Store the returned `roomID` (the code) and
+   the `hostID` you chose.
+2. Share the code, or a link carrying it — the frontend uses `/r/{code}`.
+3. A friend opens that link; the frontend calls `POST /rooms/{code}/join`,
+   passing any `userID` it already has for this room.
+4. Store the returned `roomId` and `userId`.
+5. Connect WebSocket with `/ws?roomID={roomId}&userID={userId}`.
+6. Fetch room with `GET /rooms/{roomID}` — the response already contains the
+   queue, so there's no need to also call `/queue`.
+7. Search songs with `GET /search?q=...`.
+8. Add selected songs with `POST /rooms/{roomID}/queue`.
+9. Optionally import playlists with `GET /playlist` and `POST /queue/batch`.
+10. Control playback through WebSocket `play`, `pause`, and `seek`.
+11. Apply `queue:updated` and `state:updated` as they arrive rather than
+    refetching — they carry the new value.
+
+On reconnect, refetch the room and realign the playhead: events that fired while
+the socket was down are not replayed.
 
 ## Engineering Notes
 
@@ -727,25 +815,19 @@ metadata. The tradeoff is fragility: it is unofficial.
 
 ## Current Risks And TODOs
 
-- Add host/admin checks for:
-  - deleting songs
-  - advancing queue
-  - play-now
-  - playback sync events
-- Add rate limiting for spammy actions:
-  - `play`
-  - `pause`
-  - `seek`
-  - `queue/next`
-  - votes
-- Broadcast queue changes over WebSocket.
-- Store full current song metadata, not just the current song ID.
-- Make queue and invite mutations atomic in Redis.
-- Validate song payloads more strictly.
-- Preserve `isPlaying` during seek when frontend sends that intent.
-- Add CORS handling if the frontend runs on a different origin for REST calls.
+- Add rate limiting for spammy actions: `play`, `pause`, `seek`, `queue/next`,
+  and votes.
+- Make queue and invite mutations atomic in Redis. Everything is still a
+  read-modify-write of the whole room blob, so two simultaneous writers can lose
+  one another's change. Invite `uses` has the same problem, which means a
+  max-uses limit can be exceeded under a concurrent rush.
+- Validate song payloads more strictly (only the id is required today).
+- Presence only counts sockets on the current instance. Running more than one
+  server would need the count to go through Redis too.
 - Decide whether InnerTube is acceptable long term or whether to move to the
   official YouTube Data API.
+- There is still no authentication of any kind. `userID` is self-asserted, so
+  the host-only checks keep honest people honest and nothing more.
 
 ## Useful Commands
 
