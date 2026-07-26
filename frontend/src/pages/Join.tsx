@@ -1,32 +1,63 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, ApiError } from "../lib/api";
-import { saveSession } from "../lib/storage";
+import { getSession, saveSession } from "../lib/storage";
+import { isRoomID, normalizeRoomID } from "../lib/roomCode";
 import { EqualizerMark } from "../components/EqualizerMark";
 
+/**
+ * The single door into a room. Serves `/r/:code` (a room code, typed or from a
+ * share link) and `/join/:token` (invite links handed out before codes
+ * existed). Both end at `/room/:roomID` with a session saved, so the room page
+ * itself never has to deal with "who am I".
+ */
 export function Join() {
-  const { token } = useParams();
+  const { code, token } = useParams();
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
   const ran = useRef(false);
 
   useEffect(() => {
-    if (!token || ran.current) return;
-    ran.current = true; // guard StrictMode's double-invoke — join is not idempotent
-    api
-      .joinInvite(token)
-      .then(({ roomId, userId }) => {
+    if (ran.current) return;
+    ran.current = true; // guard StrictMode's double-invoke — joining isn't idempotent
+
+    const join = async () => {
+      if (token) {
+        const { roomId, userId } = await api.joinInvite(token);
         saveSession({ roomID: roomId, userId, isHost: false });
         navigate(`/room/${roomId}`, { replace: true });
-      })
-      .catch((e) =>
-        setError(
-          e instanceof ApiError
-            ? e.message
-            : "That invite didn't work. It may have expired or been used up.",
-        ),
-      );
-  }, [token, navigate]);
+        return;
+      }
+
+      const roomID = normalizeRoomID(code ?? "");
+      if (!isRoomID(roomID)) {
+        setError("That doesn't look like a room code. They're six characters, like K4M9TQ.");
+        return;
+      }
+
+      // Reuse the id we already had here, so refreshing or following the link a
+      // second time doesn't orphan this browser's votes — or, for the host,
+      // quietly demote them to an ordinary listener.
+      const existing = getSession(roomID);
+      const { roomId, userId } = await api.joinRoom(roomID, existing?.userId);
+      saveSession({
+        roomID: roomId,
+        userId,
+        isHost: existing?.isHost ?? false,
+      });
+      navigate(`/room/${roomId}`, { replace: true });
+    };
+
+    join().catch((e: unknown) => {
+      if (e instanceof ApiError && e.status === 404) {
+        setError("That room isn't around any more. Rooms wind down after a day of quiet.");
+      } else if (e instanceof ApiError) {
+        setError(e.message);
+      } else {
+        setError("Couldn't get you in. Check the code and try again.");
+      }
+    });
+  }, [code, token, navigate]);
 
   return (
     <main
@@ -40,14 +71,11 @@ export function Join() {
         <EqualizerMark size={28} playing={!error} />
         {error ? (
           <>
-            <h2 className="display display-sm">Invite unavailable</h2>
+            <h2 className="display display-sm">Can't get in</h2>
             <p className="text-muted">{error}</p>
-            <button
-              className="btn btn-primary mt-1.5"
-              onClick={() => navigate("/")}
-            >
+            <Link className="btn btn-primary mt-1.5" to="/">
               Back to start
-            </button>
+            </Link>
           </>
         ) : (
           <>

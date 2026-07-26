@@ -1,15 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Link, Navigate, useParams } from "react-router-dom";
 import { api } from "../lib/api";
-import { getMyId, getSession, saveSession } from "../lib/storage";
+import { clearSession, getSession } from "../lib/storage";
 import { formatTime } from "../lib/youtube";
+import { formatRoomCode, isRoomCode, normalizeRoomID } from "../lib/roomCode";
 import type { PlaybackAction, QueueItem, RoomData, Song } from "../lib/types";
 import { useRoomSocket } from "../hooks/useRoomSocket";
 import { YouTubePlayer, type PlayerHandle } from "../components/YouTubePlayer";
 import { EqualizerMark } from "../components/EqualizerMark";
 import { AddSong } from "../components/AddSong";
 import { Queue } from "../components/Queue";
-import { InvitePanel } from "../components/InvitePanel";
+import { SharePanel } from "../components/SharePanel";
 
 const DOT: Record<string, string> = {
   open: "bg-[#5be3a1] shadow-[0_0_0_4px_rgba(91,227,161,0.16)]",
@@ -17,11 +18,31 @@ const DOT: Record<string, string> = {
   closed: "bg-coral",
 };
 
-export function Room() {
+/**
+ * Resolves identity before the room mounts. Anyone without a session for this
+ * room is sent through `/r/:code`, which joins properly and comes back — so the
+ * room page below can take `userId` as a given instead of inventing one.
+ */
+export function RoomRoute() {
   const { roomID = "" } = useParams();
-  const session = useMemo(() => getSession(roomID), [roomID]);
-  const userId = session?.userId ?? getMyId();
+  const canonical = normalizeRoomID(roomID);
 
+  if (canonical !== roomID) {
+    return <Navigate to={`/room/${canonical}`} replace />;
+  }
+
+  const session = getSession(canonical);
+  if (!session) return <Navigate to={`/r/${canonical}`} replace />;
+
+  return <Room roomID={canonical} userId={session.userId} />;
+}
+
+interface RoomProps {
+  roomID: string;
+  userId: string;
+}
+
+function Room({ roomID, userId }: RoomProps) {
   const playerRef = useRef<PlayerHandle>(null);
   const [room, setRoom] = useState<RoomData | null>(null);
   const [queue, setQueue] = useState<QueueItem[]>([]);
@@ -32,6 +53,9 @@ export function Room() {
   const [scrubbing, setScrubbing] = useState<number | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [playerReady, setPlayerReady] = useState(false);
+  // Set when the browser refuses the autoplay we asked for on join. The room is
+  // playing; this listener just hasn't interacted with the page yet.
+  const [needsGesture, setNeedsGesture] = useState(false);
   // Live count of connected listeners, pushed by the server over the socket.
   const [listeners, setListeners] = useState(0);
   // Volume is per-listener (local only, never broadcast) and remembered.
@@ -43,8 +67,8 @@ export function Room() {
     () => localStorage.getItem("songspot.muted") === "1",
   );
 
-  // The queue drops a song once it becomes current, so keep a title lookup
-  // around for the now-playing header.
+  // Fallback title lookup for rooms saved before the server started storing
+  // full now-playing metadata.
   const songMeta = useRef<Record<string, Song>>({});
   const currentSongRef = useRef<string>("");
   const serverNowRef = useRef<() => number>(() => Date.now());
@@ -57,30 +81,48 @@ export function Room() {
     for (const it of items) songMeta.current[it.song.id] = it.song;
   }, []);
 
-  // Load the current song when it *changes* (join, skip, play-now). We
-  // deliberately do nothing when it's unchanged: a queue add/vote/remove leaves
-  // currentSong the same, and re-seeking a playing video here would make it
-  // stutter. Live play/pause/seek are handled separately by applyRemotePlayback.
-  const syncPlayerToState = useCallback((data: RoomData) => {
+  /**
+   * Point the player at what the room says should be playing.
+   *
+   * Normally this only acts when the song *changes* (join, skip, play-now):
+   * a queue add or vote leaves the song alone, and re-seeking a playing video
+   * on every state update would make it stutter continuously. Live play/pause/
+   * seek are handled separately by applyRemotePlayback.
+   *
+   * `force` re-aligns even on the same song. That's for reconnects, where we
+   * may have slept through events and can't assume our playhead is right.
+   */
+  const syncPlayerToState = useCallback((data: RoomData, force = false) => {
     const s = data.state;
     const player = playerRef.current;
     if (!player || !playerReadyRef.current || !s.currentSong) return;
-    if (s.currentSong === currentSongRef.current) return;
+
+    const isNewSong = s.currentSong !== currentSongRef.current;
+    if (!isNewSong && !force) return;
     currentSongRef.current = s.currentSong;
+
+    // syncTimeMs is where the song was at updatedAt, so a room that's still
+    // playing has moved on since. Server time keeps that honest across clocks.
     const elapsed = s.isPlaying ? serverNowRef.current() - s.updatedAt : 0;
     const startSec = Math.max(0, (s.syncTimeMs + elapsed) / 1000);
-    player.load(s.currentSong, startSec, s.isPlaying);
+
+    if (isNewSong) {
+      player.load(s.currentSong, startSec, s.isPlaying);
+    } else {
+      player.seekTo(startSec);
+      if (s.isPlaying) player.play();
+      else player.pause();
+    }
     setPlaying(s.isPlaying);
   }, []);
 
-  const refetch = useCallback(async () => {
-    const [data, q] = await Promise.all([
-      api.getRoom(roomID),
-      api.getQueue(roomID),
-    ]);
-    rememberSongs(q);
+  const loadRoom = useCallback(async () => {
+    // The room response already carries the queue — fetching /queue alongside
+    // it just bought a second round trip for data we already had.
+    const data = await api.getRoom(roomID);
+    rememberSongs(data.queue);
     setRoom(data);
-    setQueue(q);
+    setQueue(data.queue);
     return data;
   }, [roomID, rememberSongs]);
 
@@ -104,45 +146,47 @@ export function Room() {
     [],
   );
 
-  const { conn, sendPlayback, notifyQueueChanged, serverNow } = useRoomSocket(
-    roomID,
-    userId,
-    {
-      onPlayback: applyRemotePlayback,
-      onQueueUpdated: () => {
-        refetch().then(syncPlayerToState).catch(() => {});
-      },
-      onPresence: setListeners,
+  const { conn, sendPlayback, serverNow } = useRoomSocket(roomID, userId, {
+    onPlayback: applyRemotePlayback,
+    // The server sends the new value with the event, so a vote or an add costs
+    // every listener nothing beyond the message itself.
+    onQueueUpdated: (next) => {
+      if (next) {
+        rememberSongs(next);
+        setQueue(next);
+      } else {
+        void loadRoom();
+      }
     },
-  );
+    onStateUpdated: (next) => {
+      if (next) setRoom((prev) => (prev ? { ...prev, state: next } : prev));
+      else void loadRoom();
+    },
+    onPresence: setListeners,
+    onKicked: () => {
+      clearSession(roomID);
+      setLoadError("The host removed you from this room.");
+    },
+    // We may have slept through a play, a pause, or three whole songs.
+    onReconnect: () => {
+      loadRoom()
+        .then((data) => syncPlayerToState(data, true))
+        .catch(() => {});
+    },
+  });
   serverNowRef.current = serverNow;
 
-  // Initial load. Register a viewer session if we arrived without one so
-  // reconnects reuse the same id (the backend has no auth anyway).
   useEffect(() => {
-    if (!session) saveSession({ roomID, userId, isHost: false });
     let alive = true;
-    api
-      .getRoom(roomID)
-      .then(async (data) => {
-        const q = await api.getQueue(roomID).catch(() => data.queue);
-        if (!alive) return;
-        rememberSongs(q);
-        setRoom(data);
-        setQueue(q);
-      })
-      .catch(
-        () =>
-          alive &&
-          setLoadError("This room couldn't be found. It may have ended."),
-      );
+    loadRoom().catch(() => {
+      if (alive) setLoadError("This room couldn't be found. It may have ended.");
+    });
     return () => {
       alive = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomID]);
+  }, [loadRoom]);
 
-  // Re-sync whenever room state changes (initial load, skip, remote refetch).
+  // Re-sync whenever room state changes (initial load, skip, play-now).
   useEffect(() => {
     if (room) syncPlayerToState(room);
   }, [room, syncPlayerToState]);
@@ -157,16 +201,15 @@ export function Room() {
       setDuration(p.getDuration());
       if (scrubbing === null) setCurrent(p.getTime());
       const state = p.getState();
-      if (state === 1) setPlaying(true);
-      else if (state === 2 || state === 0) setPlaying(false);
+      if (state === 1) {
+        setPlaying(true);
+        setNeedsGesture(false); // sound is coming out; nothing to unblock
+      } else if (state === 2 || state === 0) {
+        setPlaying(false);
+      }
     }, 500);
     return () => clearInterval(t);
   }, [scrubbing]);
-
-  // (Removed the periodic drift-correction loop: seeking to the live playhead
-  // re-buffered the video each tick and could jump to the start when the clock
-  // estimate was off. Everyone aligns on song load / play / pause / seek / skip,
-  // and a small amount of drift is preferable to constant buffering.)
 
   // Apply per-listener volume/mute to the player and remember the choice.
   useEffect(() => {
@@ -177,12 +220,17 @@ export function Room() {
     localStorage.setItem("songspot.muted", muted ? "1" : "0");
   }, [playerReady, volume, muted]);
 
-  const currentTitle = room?.state.currentSong
-    ? (songMeta.current[room.state.currentSong]?.title ?? "Now playing")
+  // The server keeps the playing song's metadata now, so a listener who arrives
+  // mid-song can name it. songMeta covers rooms saved before that existed.
+  const currentSongID = room?.state.currentSong;
+  const currentTitle = currentSongID
+    ? (room?.state.nowPlaying?.title ??
+      songMeta.current[currentSongID]?.title ??
+      "Now playing")
     : null;
 
   // Host identity comes from room state, not localStorage: the server is the
-  // authority, so this stays right even if local session data is stale or absent.
+  // authority, so this stays right even if local session data is stale.
   const isHost = !!room && room.state.hostID === userId;
   // The host always controls playback; everyone else only when handed the mic.
   const everyoneControls = room?.state.everyoneControls ?? false;
@@ -203,6 +251,23 @@ export function Room() {
     }
   }
 
+  /**
+   * Catch up to the room after the browser blocked autoplay. This is a local
+   * fix-up, not a control action — it broadcasts nothing, so a listener
+   * unmuting themselves never drags the room's playhead around.
+   */
+  function startListening() {
+    const p = playerRef.current;
+    const s = room?.state;
+    setNeedsGesture(false);
+    if (!p || !s) return;
+    if (s.currentSong) {
+      const elapsed = s.isPlaying ? serverNowRef.current() - s.updatedAt : 0;
+      p.seekTo(Math.max(0, (s.syncTimeMs + elapsed) / 1000));
+    }
+    if (s.isPlaying) p.play();
+  }
+
   function changeVolume(v: number) {
     setVolume(v);
     setMuted(v === 0);
@@ -218,59 +283,56 @@ export function Room() {
   }
 
   function commitSeek(sec: number) {
+    if (scrubbing === null) return;
+    setScrubbing(null);
     if (!canControl) return;
     const p = playerRef.current;
     p?.seekTo(sec);
     setCurrent(sec);
-    setScrubbing(null);
     sendPlayback("seek", Math.floor(sec * 1000));
     if (playing) p?.play();
   }
 
-  async function skipNext() {
-    if (queue.length === 0 || !canControl) return;
+  /**
+   * Move to the next song. `afterSongID` marks this as an automatic advance
+   * because a track ended: the server only acts if that song is still current,
+   * so every listener can fire it at once and the queue still moves one step.
+   * Without it this is a manual skip and needs playback permission.
+   */
+  async function skipNext(afterSongID?: string) {
+    if (queue.length === 0) return;
+    if (!afterSongID && !canControl) return;
     try {
-      await api.advanceQueue(roomID, userId);
+      const state = await api.advanceQueue(roomID, userId, afterSongID);
+      setRoom((prev) => (prev ? { ...prev, state } : prev));
+      setQueue((q) => q.filter((item) => item.song.id !== state.currentSong));
     } catch {
-      // Queue emptied from under us (e.g. a peer skipped first) — the refetch
-      // below reconciles to the real state either way.
+      // Someone beat us to it, or the queue emptied underneath us. The server
+      // broadcasts the truth to everyone either way.
     }
-    // advanceQueue returns only RoomState; refetch the full room so `room`,
-    // `queue`, and the player all move to the new current song together.
-    await refetch();
-    notifyQueueChanged();
   }
 
-  async function onSongAdded() {
-    const q = await api.getQueue(roomID);
-    rememberSongs(q);
-    setQueue(q);
-    notifyQueueChanged();
+  function applyQueue(next: QueueItem[]) {
+    rememberSongs(next);
+    setQueue(next);
   }
 
   async function handlePlayNow(song: Song) {
     if (!canControl) return;
     songMeta.current[song.id] = song;
-    await api.playNow(roomID, song, userId);
-    // refetch() updates `room`, which the room-state effect turns into a
-    // player.load(); notify peers so they refetch and load the new song too.
-    await refetch();
-    notifyQueueChanged();
+    const state = await api.playNow(roomID, song, userId);
+    setRoom((prev) => (prev ? { ...prev, state } : prev));
   }
 
   async function handleToggleControl(next: boolean) {
-    await api.setControl(roomID, userId, next);
-    await refetch();
-    notifyQueueChanged(); // peers refetch and pick up the new permission
+    const state = await api.setControl(roomID, userId, next);
+    setRoom((prev) => (prev ? { ...prev, state } : prev));
   }
 
   async function mutateQueue(fn: () => Promise<QueueItem[]>, id: string) {
     setPendingId(id);
     try {
-      const q = await fn();
-      rememberSongs(q);
-      setQueue(q);
-      notifyQueueChanged();
+      applyQueue(await fn());
     } finally {
       setPendingId(null);
     }
@@ -287,7 +349,7 @@ export function Room() {
       >
         <div className="flex max-w-[380px] flex-col items-center gap-3.5 text-center">
           <EqualizerMark size={28} />
-          <h2 className="display display-sm">Room not found</h2>
+          <h2 className="display display-sm">Room's closed</h2>
           <p className="text-muted">{loadError}</p>
           <Link className="btn btn-primary mt-1.5" to="/">
             Back to start
@@ -298,7 +360,7 @@ export function Room() {
   }
 
   const shownTime = scrubbing ?? current;
-  const hasSong = Boolean(room?.state.currentSong);
+  const hasSong = Boolean(currentSongID);
 
   return (
     <div
@@ -308,7 +370,7 @@ export function Room() {
           "radial-gradient(140% 60% at 80% -10%, #14151d, var(--color-bg) 55%)",
       }}
     >
-      <header className="flex items-center justify-between gap-4 border-b border-line-soft px-[clamp(1rem,3vw,2rem)] py-4">
+      <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-line-soft px-[clamp(1rem,3vw,2rem)] py-4">
         <Link className="flex items-center gap-2.5 text-ink" to="/">
           <EqualizerMark size={20} playing={playing} />
           <span className="font-display text-[1.05rem] font-bold tracking-[-0.02em]">
@@ -316,6 +378,14 @@ export function Room() {
           </span>
         </Link>
         <div className="flex items-center gap-2.5">
+          {isRoomCode(roomID) && (
+            <span
+              className="pill font-mono tracking-[0.1em]"
+              title="Room code — share this to invite people"
+            >
+              {formatRoomCode(roomID)}
+            </span>
+          )}
           <span className={`h-2 w-2 rounded-full ${DOT[conn]}`} />
           <span className="text-[0.82rem] text-muted">
             {conn === "open"
@@ -349,8 +419,13 @@ export function Room() {
                 setPlayerReady(true);
                 if (room) syncPlayerToState(room);
               }}
+              onAutoplayBlocked={() => setNeedsGesture(true)}
               onEnded={() => {
-                if (isHost && queue.length > 0) void skipNext();
+                // Everyone fires this; the afterSongID guard keeps it to one
+                // advance, so the room moves on even with no host present.
+                if (currentSongID && queue.length > 0) {
+                  void skipNext(currentSongID);
+                }
               }}
               onUserPlay={(at) => {
                 if (!canControl) return;
@@ -363,13 +438,32 @@ export function Room() {
                 sendPlayback("pause", Math.floor(at * 1000));
               }}
             />
+
+            {/* Browsers won't autoplay into a tab nobody has touched yet, so a
+                joiner lands on a silent player. One tap catches them up. */}
+            {needsGesture && hasSong && (
+              <button
+                className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/70 text-center backdrop-blur-sm"
+                onClick={startListening}
+              >
+                <span className="grid h-14 w-14 place-items-center rounded-full bg-accent text-[1.1rem] text-[#1a1206]">
+                  ►
+                </span>
+                <span className="font-display font-bold">Tap to listen</span>
+                <span className="text-[0.82rem] text-muted2">
+                  Your browser paused the audio until you said so.
+                </span>
+              </button>
+            )}
+
             {/* Non-controllers can't click the video to pause it. */}
-            {hasSong && !canControl && (
+            {hasSong && !canControl && !needsGesture && (
               <div
                 className="absolute inset-0 cursor-not-allowed"
                 title="The host controls playback"
               />
             )}
+
             {!hasSong && (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-gradient-to-b from-[#101219] to-[#0a0b0f] text-center">
                 <EqualizerMark size={40} />
@@ -410,13 +504,18 @@ export function Room() {
                 step={0.5}
                 value={Math.min(shownTime, duration || 0)}
                 disabled={!hasSong || !canControl}
+                aria-label="Seek"
                 onChange={(e) => setScrubbing(Number(e.target.value))}
-                onMouseUp={(e) =>
+                // pointerup covers mouse and touch; keyup and blur are what make
+                // the scrubber work from the keyboard, which previously left it
+                // stuck mid-drag forever.
+                onPointerUp={(e) =>
                   commitSeek(Number((e.target as HTMLInputElement).value))
                 }
-                onTouchEnd={(e) =>
+                onKeyUp={(e) =>
                   commitSeek(Number((e.target as HTMLInputElement).value))
                 }
+                onBlur={(e) => commitSeek(Number(e.target.value))}
                 style={
                   {
                     "--pct": `${duration ? (shownTime / duration) * 100 : 0}%`,
@@ -468,7 +567,9 @@ export function Room() {
             {isHost ? (
               <div className="mt-3 flex items-center justify-between gap-3 border-t border-line-soft pt-3">
                 <span className="text-[0.85rem]">
-                  <span className="font-medium">Let everyone control playback</span>
+                  <span className="font-medium">
+                    Let everyone control playback
+                  </span>
                   <span className="block text-[0.72rem] text-muted2">
                     {everyoneControls
                       ? "Anyone can play, pause, seek, and skip."
@@ -506,7 +607,7 @@ export function Room() {
             <AddSong
               roomID={roomID}
               canPlayNow={canControl}
-              onChanged={() => void onSongAdded()}
+              onChanged={applyQueue}
               onPlayNow={handlePlayNow}
             />
           </div>
@@ -538,7 +639,7 @@ export function Room() {
                 Invite the room
               </h2>
             </div>
-            <InvitePanel roomID={roomID} />
+            <SharePanel roomID={roomID} />
           </div>
         </aside>
       </main>
