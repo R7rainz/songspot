@@ -38,6 +38,9 @@ export function AddSong({ roomID, canPlayNow, onChanged, onPlayNow }: Props) {
 
   useEffect(() => {
     const q = query.trim();
+    // Invalidate work that is already in flight even when the new value is
+    // empty or too short to start another request.
+    const id = ++reqId.current;
     setError(null);
     if (!q) {
       setResults([]);
@@ -56,7 +59,6 @@ export function AddSong({ roomID, canPlayNow, onChanged, onPlayNow }: Props) {
       return;
     }
 
-    const id = ++reqId.current;
     setStatus("loading");
     setPlaylist(null);
     setResults([]);
@@ -90,6 +92,8 @@ export function AddSong({ roomID, canPlayNow, onChanged, onPlayNow }: Props) {
   }, [query]);
 
   async function add(song: Song) {
+    if (pendingId) return;
+    setError(null);
     setPendingId(song.id);
     try {
       onChanged(await api.addSong(roomID, song));
@@ -101,9 +105,13 @@ export function AddSong({ roomID, canPlayNow, onChanged, onPlayNow }: Props) {
   }
 
   async function playNow(song: Song) {
+    if (pendingId) return;
+    setError(null);
     setPendingId(song.id);
     try {
       await onPlayNow(song);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Couldn't play that one.");
     } finally {
       setPendingId(null);
     }
@@ -111,6 +119,7 @@ export function AddSong({ roomID, canPlayNow, onChanged, onPlayNow }: Props) {
 
   async function addAll() {
     if (!playlist || playlist.length === 0) return;
+    setError(null);
     setAddingAll(true);
     try {
       onChanged(await api.addBatch(roomID, playlist));
@@ -124,41 +133,47 @@ export function AddSong({ roomID, canPlayNow, onChanged, onPlayNow }: Props) {
 
   return (
     <div>
-      <label
-        className="mb-2 block text-[0.8rem] font-medium text-muted"
-        htmlFor="add-music"
-      >
+      <label className="label mb-2 block" htmlFor="add-music">
         Add music
       </label>
       <input
         id="add-music"
         className="input"
-        placeholder="Search a song, or paste a link or playlist…"
+        placeholder="Search or paste a link…"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         autoComplete="off"
       />
 
       {status === "loading" && (
-        <p className="mt-3 text-[0.82rem] text-muted2">Searching…</p>
+        <p
+          className="status-copy mt-3"
+          role="status"
+          aria-live="polite"
+        >
+          Searching…
+        </p>
       )}
-      {error && <p className="alert mt-2.5">{error}</p>}
+      {error && (
+        <p className="bubble mt-4" role="alert">
+          {error}
+        </p>
+      )}
 
       {playlist && (
-        <div className="mt-3 rounded-[10px] border border-line bg-surface2 p-3">
+        <div className="mt-4 border-l-4 border-lagoon bg-lagoon-tint px-3 py-3">
           {playlist.length === 0 ? (
-            <p className="text-[0.85rem] text-muted">
+            <p className="text-[0.86rem] font-bold text-ink2">
               No tracks found in that playlist.
             </p>
           ) : (
             <>
-              <p className="text-[0.85rem]">
-                Found{" "}
-                <span className="font-semibold text-ink">{playlist.length}</span>{" "}
+              <p className="text-[0.88rem] font-bold">
+                <span className="font-mono text-[1.05rem]">{playlist.length}</span>{" "}
                 {playlist.length === 1 ? "track" : "tracks"} in this playlist.
               </p>
               <button
-                className="btn btn-primary mt-2.5 w-full"
+                className="btn btn-primary mt-3 w-full"
                 onClick={addAll}
                 disabled={addingAll}
               >
@@ -170,44 +185,46 @@ export function AddSong({ roomID, canPlayNow, onChanged, onPlayNow }: Props) {
       )}
 
       {results.length > 0 && (
-        <ul className="mt-2 max-h-[340px] overflow-y-auto">
+        <ul className="result-scroll mt-3 max-h-[340px] space-y-2 overflow-y-auto pr-1">
           {results.map((song) => (
             <li
               key={song.id}
-              className={`flex items-center gap-3 border-t border-line-soft py-2 first:border-t-0 ${
-                pendingId === song.id ? "opacity-50" : ""
+              className={`cassette-result flex items-center gap-3 px-2.5 py-2 ${
+                pendingId === song.id ? "opacity-45" : ""
               }`}
             >
-              <img
-                className="h-11 w-11 shrink-0 rounded-lg bg-surface3 object-cover"
-                src={song.thumbnail}
-                alt=""
-                loading="lazy"
-              />
+              <div className="cassette-art shrink-0">
+                <img
+                  className="h-11 w-11 object-cover"
+                  src={song.thumbnail}
+                  alt=""
+                  loading="lazy"
+                />
+              </div>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-[0.86rem] font-medium" title={song.title}>
+                <p className="truncate text-[0.86rem] font-bold" title={song.title}>
                   {song.title}
                 </p>
-                <p className="truncate font-mono text-[0.7rem] text-muted2">
+                <p className="truncate font-mono text-[0.7rem] font-bold text-ink3">
                   {song.channel ? `${song.channel} · ` : ""}
                   {song.duration > 0 ? formatTime(song.duration) : "—"}
                 </p>
               </div>
               {canPlayNow && (
                 <button
-                  className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-accent text-[0.7rem] text-[#1a1206] transition hover:scale-105 disabled:opacity-45"
+                  className="knob h-8 w-8 shrink-0 text-[0.68rem]"
                   onClick={() => playNow(song)}
-                  disabled={pendingId === song.id}
+                  disabled={pendingId !== null}
                   aria-label={`Play ${song.title} now`}
                   title="Play now"
                 >
-                  ►
+                  <span aria-hidden="true">▶</span>
                 </button>
               )}
               <button
-                className="btn shrink-0 !px-3 !py-1.5 text-[0.82rem]"
+                className="btn shrink-0 !px-3 !py-1.5 !text-[0.8rem]"
                 onClick={() => add(song)}
-                disabled={pendingId === song.id}
+                disabled={pendingId !== null}
               >
                 Add
               </button>
@@ -221,7 +238,9 @@ export function AddSong({ roomID, canPlayNow, onChanged, onPlayNow }: Props) {
         query.trim().length >= 2 &&
         !playlist &&
         results.length === 0 && (
-          <p className="mt-3 text-[0.82rem] text-muted2">No results.</p>
+          <p className="status-copy mt-3">
+            No results.
+          </p>
         )}
     </div>
   );

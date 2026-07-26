@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { api, ApiError } from "../lib/api";
 import { getMyId, saveSession } from "../lib/storage";
 import { parseRoomEntry } from "../lib/roomCode";
-import { EqualizerMark } from "../components/EqualizerMark";
+import { NoteField, Wordmark } from "../components/Brand";
 import { RoomPreview } from "../components/RoomPreview";
 
 export function Home() {
@@ -39,59 +39,56 @@ export function Home() {
     else setError("That isn't a room code or link. Codes are six characters, like K4M9TQ.");
   }
 
-  return (
-    <main
-      className="relative flex min-h-full flex-col overflow-hidden p-[clamp(1.4rem,4vw,3rem)]"
-      style={{
-        background:
-          "radial-gradient(120% 80% at 30% -10%, #14161f 0%, var(--color-bg) 55%)",
-      }}
-    >
-      {/* ambient spotlight */}
-      <div
-        className="pointer-events-none absolute -top-[22vh] left-1/4 h-[min(90vw,760px)] w-[min(90vw,760px)] -translate-x-1/2 blur-[10px]"
-        style={{
-          background:
-            "radial-gradient(circle, rgba(255,184,77,0.22), rgba(255,93,143,0.10) 42%, transparent 66%)",
-        }}
-        aria-hidden="true"
-      />
+  const pasted = /[/:]/.test(code);
 
-      <header className="relative flex items-center gap-2.5">
-        <EqualizerMark size={26} />
-        <span className="wordmark">SongSpot</span>
+  return (
+    <main className="home-shell relative flex min-h-full flex-col overflow-hidden p-[clamp(1.2rem,4vw,2.6rem)]">
+      <NoteField />
+
+      <header className="relative mx-auto flex w-full max-w-[1480px] items-center justify-between gap-4">
+        <Wordmark />
+        <span className="chip hidden sm:inline-flex">
+          <span className="h-2 w-2 rounded-full border border-ink bg-lagoon" />
+          No account needed
+        </span>
       </header>
 
-      <div className="relative my-auto grid items-center gap-12 lg:grid-cols-[1.05fr_1fr]">
-        <section className="max-w-[640px]">
-          <p className="eyebrow mb-[1.1rem]">Collaborative listening</p>
-          <h1 className="display">
+      <div className="relative mx-auto my-auto grid w-full max-w-[1480px] items-center gap-[clamp(2rem,5vw,4rem)] py-10 lg:grid-cols-[1.05fr_1fr]">
+        <section className="max-w-[620px]">
+          <p className="eyebrow mb-4">Collaborative listening</p>
+          <h1 className="display display-pop">
             Tune in
             <br />
             together.
           </h1>
-          <p className="lede mt-[1.4rem]">
+          <p className="lede mt-6">
             One room, one queue, one playhead. Everyone hears the same second of
             the same song — vote up what plays next.
           </p>
 
-          <div className="mt-[2.4rem] flex flex-wrap items-center gap-3">
+          <div className="mt-9 flex flex-col items-start gap-5 sm:flex-row sm:items-center">
             <button
-              className="btn btn-primary btn-lg"
+              className="btn btn-primary btn-lg shrink-0"
               onClick={startRoom}
               disabled={creating}
+              aria-busy={creating}
             >
-              {creating ? "Setting the stage…" : "Start a room"}
+              {creating ? "Setting up…" : "Start a room"}
             </button>
 
-            <form className="flex min-w-[260px] flex-1 gap-2" onSubmit={goToRoom}>
+            <span className="label hidden sm:block">or</span>
+
+            <form
+              className="card-flat flex w-full min-w-0 max-w-[380px] items-center gap-2 !p-2.5"
+              onSubmit={goToRoom}
+            >
               <input
                 // Codes read back as upper-case while typing; a pasted link is
                 // left alone, since an ALL-CAPS URL just looks broken.
-                className={`input flex-1 ${
-                  /[/:]/.test(code) ? "" : "input-mono uppercase"
+                className={`input min-w-0 flex-1 !border-0 !px-2 !shadow-none ${
+                  pasted ? "" : "input-mono uppercase"
                 }`}
-                placeholder="Room code, e.g. K4M9TQ"
+                placeholder={pasted ? "" : "K4M9TQ"}
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
                 aria-label="Room code or link"
@@ -99,13 +96,17 @@ export function Home() {
                 autoCapitalize="characters"
                 spellCheck={false}
               />
-              <button className="btn" type="submit" disabled={!code.trim()}>
+              <button className="btn btn-go shrink-0" type="submit" disabled={!code.trim()}>
                 Join
               </button>
             </form>
           </div>
 
-          {error && <p className="alert mt-4">{error}</p>}
+          {error && (
+            <p className="bubble mt-5 max-w-[420px]" role="alert">
+              {error}
+            </p>
+          )}
         </section>
 
         <div className="hidden lg:block">
@@ -113,8 +114,10 @@ export function Home() {
         </div>
       </div>
 
-      <footer className="relative mt-12 font-mono text-[0.78rem] tracking-wide text-muted2">
-        Bring the aux. Leave the arguments.
+      <footer className="relative mx-auto flex w-full max-w-[1480px] flex-wrap items-center gap-x-3 gap-y-1.5 font-mono text-[0.76rem] font-bold uppercase text-ink3">
+        <span>Bring the aux</span>
+        <span aria-hidden="true">•</span>
+        <span>Leave the arguments</span>
       </footer>
     </main>
   );

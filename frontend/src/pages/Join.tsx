@@ -4,6 +4,7 @@ import { api, ApiError } from "../lib/api";
 import { getSession, saveSession } from "../lib/storage";
 import { isRoomID, normalizeRoomID } from "../lib/roomCode";
 import { EqualizerMark } from "../components/EqualizerMark";
+import { NoteField } from "../components/Brand";
 
 /**
  * The single door into a room. Serves `/r/:code` (a room code, typed or from a
@@ -60,19 +61,18 @@ export function Join() {
   }, [code, token, navigate]);
 
   return (
-    <main
-      className="grid min-h-full place-items-center p-8"
-      style={{
-        background:
-          "radial-gradient(120% 80% at 50% 0%, #14161f, var(--color-bg) 60%)",
-      }}
-    >
-      <div className="flex max-w-[380px] flex-col items-center gap-3.5 text-center">
-        <EqualizerMark size={28} playing={!error} />
+    <main className="relative grid min-h-full place-items-center overflow-hidden p-8">
+      <NoteField />
+      <div
+        className="card relative flex max-w-[420px] flex-col items-center gap-3 text-center"
+        role={error ? "alert" : "status"}
+        aria-live="polite"
+      >
+        <EqualizerMark size={30} playing={!error} />
         {error ? (
           <>
             <h2 className="display display-sm">Can't get in</h2>
-            <p className="text-muted">{error}</p>
+            <p className="text-[0.95rem] font-semibold text-ink2">{error}</p>
             <Link className="btn btn-primary mt-1.5" to="/">
               Back to start
             </Link>
@@ -80,7 +80,9 @@ export function Join() {
         ) : (
           <>
             <h2 className="display display-sm">Joining the room…</h2>
-            <p className="text-muted">Grabbing you a seat.</p>
+            <p className="text-[0.95rem] font-semibold text-ink2">
+              Grabbing you a seat.
+            </p>
           </>
         )}
       </div>
