@@ -135,7 +135,12 @@ func (c *Client) ReadPump() {
 				continue
 			}
 
-			room.State.IsPlaying = event.Action == "play"
+			// A seek keeps whatever play state the room was already in —
+			// checking only for "play" here used to pause the room every time
+			// someone dragged the scrubber.
+			if event.Action != "seek" {
+				room.State.IsPlaying = event.Action == "play"
+			}
 			room.State.SyncTimeMs = int64(syncTimeMs)
 			room.State.UpdatedAt = time.Now().UnixMilli()
 
