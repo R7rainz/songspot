@@ -30,18 +30,14 @@ func main() {
 	// setup http router
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status": "ok"}`))
+		w.Write([]byte(`{"status":"ok"}`))
 	})
 
-	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
-		roomID := r.URL.Query().Get("roomID")
-		userID := r.URL.Query().Get("userID")
-
-		api.ServerWs(w, r, roomID, userID, rdb)
-	})
-
+	// Registers the REST routes and the /ws upgrade handler, which share the
+	// room-hub registry.
 	api.SetupRestRoutes(mux, rdb)
 
 	port := env.GetDefault("PORT", "8080")
