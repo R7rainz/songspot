@@ -4,8 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"log"
-	"songspot/internal/models"
 	"time"
+
+	"songspot/internal/models"
 
 	"github.com/gorilla/websocket"
 )
@@ -16,18 +17,42 @@ const (
 	pingPeriod = (pongWait * 9) / 10
 )
 
-// middleman between the websocket connection and the hub
+// Client is the middleman between one websocket connection and its room's hub.
 type Client struct {
-	Hub    *Hub
 	UserID string
 	Conn   *websocket.Conn
 	Send   chan []byte
+	// Done is closed by the hub when this client is detached. It replaces
+	// closing Send, which the client's own read pump also writes to.
+	Done chan struct{}
+
+	hub *Hub
+	reg *Registry
 }
 
-// readpump pumps messages from the websocket connection to the hub this runs in a dedicated goroutine for each client
+func NewClient(userID string, conn *websocket.Conn) *Client {
+	return &Client{
+		UserID: userID,
+		Conn:   conn,
+		Send:   make(chan []byte, 256),
+		Done:   make(chan struct{}),
+	}
+}
+
+// send queues a message for this client, giving up if the client has already
+// been detached rather than blocking forever on a buffer nobody is draining.
+func (c *Client) send(message []byte) {
+	select {
+	case c.Send <- message:
+	case <-c.Done:
+	}
+}
+
+// ReadPump pumps messages from the websocket connection to the hub. Runs in a
+// dedicated goroutine per client.
 func (c *Client) ReadPump() {
 	defer func() {
-		c.Hub.Unregister <- c
+		c.reg.Leave(c)
 		c.Conn.Close()
 	}()
 
@@ -47,38 +72,39 @@ func (c *Client) ReadPump() {
 		}
 
 		var event models.WSEvent
-		if err = json.Unmarshal(message, &event); err == nil && event.Action == "ping" {
-			dataMap, ok := event.Data.(map[string]interface{})
-			if ok {
-				clientTimeValue, ok := dataMap["clientTime"].(float64)
-				if !ok {
-					continue
-				}
-
-				pongData := models.TimeSyncData{
-					ClientTime: int64(clientTimeValue),
-					ServerTime: time.Now().UnixMilli(),
-				}
-
-				pongEvent := models.WSEvent{
-					Action:    "pong",
-					Data:      pongData,
-					Timestamp: time.Now().UnixMilli(),
-				}
-
-				if responseMsg, err := json.Marshal(pongEvent); err == nil {
-					c.Send <- responseMsg // bound directly back to this client
-				}
-			}
+		if err := json.Unmarshal(message, &event); err != nil {
 			continue
 		}
 
 		ctx := context.Background()
-		channelName := "room_events:" + c.Hub.RoomID
+		channelName := "room_events:" + c.hub.RoomID
 
 		switch event.Action {
+		case "ping":
+			// Answered straight back to this client only; it is how the
+			// frontend estimates its clock offset from the server.
+			dataMap, ok := event.Data.(map[string]any)
+			if !ok {
+				continue
+			}
+			clientTime, ok := dataMap["clientTime"].(float64)
+			if !ok {
+				continue
+			}
+			pong, err := json.Marshal(models.WSEvent{
+				Action: "pong",
+				Data: models.TimeSyncData{
+					ClientTime: int64(clientTime),
+					ServerTime: time.Now().UnixMilli(),
+				},
+				Timestamp: time.Now().UnixMilli(),
+			})
+			if err == nil {
+				c.send(pong)
+			}
+
 		case "play", "pause", "seek":
-			dataMap, ok := event.Data.(map[string]interface{})
+			dataMap, ok := event.Data.(map[string]any)
 			if !ok {
 				log.Println("Invalid data payload for sync event")
 				continue
@@ -90,8 +116,8 @@ func (c *Client) ReadPump() {
 				continue
 			}
 
-			roomKey := "room:" + c.Hub.RoomID
-			roomDataStr, err := c.Hub.redisClient.Get(ctx, roomKey).Result()
+			roomKey := "room:" + c.hub.RoomID
+			roomDataStr, err := c.hub.redisClient.Get(ctx, roomKey).Result()
 			if err != nil {
 				log.Printf("Failed to fetch room state: %v", err)
 				continue
@@ -109,7 +135,12 @@ func (c *Client) ReadPump() {
 				continue
 			}
 
-			room.State.IsPlaying = event.Action == "play"
+			// A seek keeps whatever play state the room was already in —
+			// checking only for "play" here used to pause the room every time
+			// someone dragged the scrubber.
+			if event.Action != "seek" {
+				room.State.IsPlaying = event.Action == "play"
+			}
 			room.State.SyncTimeMs = int64(syncTimeMs)
 			room.State.UpdatedAt = time.Now().UnixMilli()
 
@@ -119,11 +150,13 @@ func (c *Client) ReadPump() {
 				continue
 			}
 
-			if err := c.Hub.redisClient.Set(ctx, roomKey, updatedRoomData, models.RoomTTL).Err(); err != nil {
+			if err := c.hub.redisClient.Set(ctx, roomKey, updatedRoomData, models.RoomTTL).Err(); err != nil {
 				log.Printf("Failed to update room state: %v", err)
 				continue
 			}
 
+			// Stamp with server time so receivers can work out how much of the
+			// song has elapsed since the event was published.
 			event.Timestamp = time.Now().UnixMilli()
 			enrichedMsg, err := json.Marshal(event)
 			if err != nil {
@@ -131,21 +164,20 @@ func (c *Client) ReadPump() {
 				continue
 			}
 
-			if err := c.Hub.redisClient.Publish(ctx, channelName, string(enrichedMsg)).Err(); err != nil {
+			if err := c.hub.redisClient.Publish(ctx, channelName, string(enrichedMsg)).Err(); err != nil {
 				log.Printf("Failed to publish sync event to Redis: %v", err)
 			}
 
 		default:
-			err = c.Hub.redisClient.Publish(ctx, channelName, string(message)).Err()
-			if err != nil {
+			if err := c.hub.redisClient.Publish(ctx, channelName, string(message)).Err(); err != nil {
 				log.Printf("Failed to publish to Redis: %v", err)
 			}
 		}
 	}
 }
 
-// writepump pumps messages from the hub to the websocket connection
-// also runs in a dedicated goroutine for each client
+// WritePump pumps messages from the hub to the websocket connection. Also runs
+// in a dedicated goroutine per client.
 func (c *Client) WritePump() {
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
@@ -155,23 +187,22 @@ func (c *Client) WritePump() {
 
 	for {
 		select {
-		case message, ok := <-c.Send:
+		case <-c.Done:
 			c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
-			if !ok {
-				c.Conn.WriteMessage(websocket.CloseMessage, []byte{})
-				return
-			}
+			c.Conn.WriteMessage(websocket.CloseMessage, []byte{})
+			return
 
+		case message := <-c.Send:
+			c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
 			w, err := c.Conn.NextWriter(websocket.TextMessage)
 			if err != nil {
 				return
 			}
-
 			w.Write(message)
-
 			if err := w.Close(); err != nil {
 				return
 			}
+
 		case <-ticker.C:
 			c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := c.Conn.WriteMessage(websocket.PingMessage, nil); err != nil {

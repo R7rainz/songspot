@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, ApiError } from "../lib/api";
 import { getMyId, saveSession } from "../lib/storage";
+import { parseRoomEntry } from "../lib/roomCode";
 import { EqualizerMark } from "../components/EqualizerMark";
 import { RoomPreview } from "../components/RoomPreview";
 
@@ -25,15 +26,17 @@ export function Home() {
     }
   }
 
+  // One box for every way a room reaches someone: a code read out over a call,
+  // a share link, or one of the older /room/ and /join/ links.
   function goToRoom(e: React.FormEvent) {
     e.preventDefault();
-    const id = code.trim();
-    if (!id) return;
-    // Accept a room id or a pasted invite token/link.
-    const token = id.match(/join\/([^/?#]+)/)?.[1];
-    if (token) navigate(`/join/${token}`);
-    else if (/^[0-9a-fA-F-]{20,}$/.test(id)) navigate(`/join/${id}`);
-    else navigate(`/room/${id}`);
+    if (!code.trim()) return;
+    setError(null);
+
+    const entry = parseRoomEntry(code);
+    if (entry.kind === "room") navigate(`/r/${entry.roomID}`);
+    else if (entry.kind === "invite") navigate(`/join/${entry.token}`);
+    else setError("That isn't a room code or link. Codes are six characters, like K4M9TQ.");
   }
 
   return (
@@ -83,11 +86,18 @@ export function Home() {
 
             <form className="flex min-w-[260px] flex-1 gap-2" onSubmit={goToRoom}>
               <input
-                className="input flex-1"
-                placeholder="Room code or invite link"
+                // Codes read back as upper-case while typing; a pasted link is
+                // left alone, since an ALL-CAPS URL just looks broken.
+                className={`input flex-1 ${
+                  /[/:]/.test(code) ? "" : "input-mono uppercase"
+                }`}
+                placeholder="Room code, e.g. K4M9TQ"
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
-                aria-label="Room code or invite link"
+                aria-label="Room code or link"
+                autoComplete="off"
+                autoCapitalize="characters"
+                spellCheck={false}
               />
               <button className="btn" type="submit" disabled={!code.trim()}>
                 Join

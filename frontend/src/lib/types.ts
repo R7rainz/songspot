@@ -1,4 +1,4 @@
-// Mirrors the backend data models documented in backend/AGENT.md.
+// Mirrors the backend data models documented in backend/agent.md.
 
 export interface Song {
   id: string; // YouTube video id
@@ -18,6 +18,10 @@ export interface RoomState {
   roomID: string;
   hostID: string;
   currentSong: string; // YouTube video id, "" when nothing is playing
+  // Full metadata for currentSong. Songs leave the queue when they start
+  // playing, so this is the only way a listener who joined mid-song can name
+  // what they're hearing. Absent on rooms saved before it existed.
+  nowPlaying?: Song;
   isPlaying: boolean;
   syncTimeMs: number;
   updatedAt: number;
@@ -36,11 +40,18 @@ export interface Invite {
   maxUses: number;
 }
 
+export interface JoinResult {
+  roomId: string;
+  userId: string;
+}
+
 export type PlaybackAction = "play" | "pause" | "seek";
 
-// Custom passthrough event we emit so peers refetch after REST queue changes,
-// which the backend does not broadcast on its own (see AGENT.md caveats).
+// Server-sent room events. The backend publishes these after every REST
+// mutation, with the new value attached, so listeners neither poll nor depend
+// on the mutating client to announce its own change.
 export const QUEUE_UPDATED = "queue:updated";
+export const STATE_UPDATED = "state:updated";
 
 export interface WSEvent {
   action: string;

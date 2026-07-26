@@ -1,14 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../lib/api";
 import { formatTime, parseVideoId, songFromId } from "../lib/youtube";
-import type { Song } from "../lib/types";
+import type { QueueItem, Song } from "../lib/types";
 
 interface Props {
   roomID: string;
   /** Whether this participant may play a track immediately (host / everyone). */
   canPlayNow: boolean;
-  /** Refetch + broadcast after the queue changes. */
-  onChanged: () => void;
+  /**
+   * Receives the updated queue the mutation returned, so adding a song doesn't
+   * cost a follow-up round trip to read back what we were just told.
+   */
+  onChanged: (queue: QueueItem[]) => void;
   /** Set the room's current song immediately. */
   onPlayNow: (song: Song) => void | Promise<void>;
 }
@@ -89,8 +92,7 @@ export function AddSong({ roomID, canPlayNow, onChanged, onPlayNow }: Props) {
   async function add(song: Song) {
     setPendingId(song.id);
     try {
-      await api.addSong(roomID, song);
-      onChanged();
+      onChanged(await api.addSong(roomID, song));
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Couldn't add that one.");
     } finally {
@@ -111,8 +113,7 @@ export function AddSong({ roomID, canPlayNow, onChanged, onPlayNow }: Props) {
     if (!playlist || playlist.length === 0) return;
     setAddingAll(true);
     try {
-      await api.addBatch(roomID, playlist);
-      onChanged();
+      onChanged(await api.addBatch(roomID, playlist));
       setQuery("");
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Couldn't import that playlist.");
