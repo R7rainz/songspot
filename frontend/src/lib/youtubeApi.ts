@@ -6,6 +6,8 @@ export interface YTPlayer {
   pauseVideo(): void;
   seekTo(seconds: number, allowSeekAhead: boolean): void;
   loadVideoById(videoId: string, startSeconds?: number): void;
+  /** Loads without starting playback, unlike loadVideoById. */
+  cueVideoById(videoId: string, startSeconds?: number): void;
   getCurrentTime(): number;
   getDuration(): number;
   getPlayerState(): number;
