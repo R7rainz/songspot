@@ -1,77 +1,129 @@
 @import "tailwindcss";
 
 /* ============================================================
-   SongSpot — "spotlight on a dark stage"
-   Design tokens + a thin layer for effects utilities can't express.
+   SongSpot — "dark listening console"
+   A Gruvbox-inspired system: charcoal surfaces, warm foregrounds,
+   hard black shadows, and a compact set of yellow, orange, and
+   green signals. The player stays the darkest object in the room.
    ============================================================ */
 
 @theme {
-  --color-bg: #0b0c10;
-  --color-bg2: #101219;
-  --color-surface: #16181f;
-  --color-surface2: #1c1f28;
-  --color-surface3: #232733;
-  --color-line: #262a34;
-  --color-line-soft: #1e222b;
-  --color-ink: #edeef2;
-  --color-muted: #9498a6;
-  --color-muted2: #6d7280;
-  --color-amber: #ffb84d;
-  --color-coral: #ff5d8f;
+  /* Room surfaces. */
+  --color-paper: #1d2021;
+  --color-paper2: #32302f;
+  --color-paper3: #504945;
+  --color-card: #282828;
 
-  --font-sans: "Inter", system-ui, sans-serif;
-  --font-display: "Bricolage Grotesque", "Inter", sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  /* Foregrounds and structural colors. */
+  --color-ink: #ebdbb2;
+  --color-ink2: #d5c4a1;
+  --color-ink3: #a89984;
+  --color-accent-ink: #1d2021;
+  --color-shadow: #0d0f0f;
 
-  --animate-float: float 7s ease-in-out infinite;
-  --animate-spin-slow: spin 14s linear infinite;
-  --animate-note: note-rise 7s linear infinite;
+  /* Gruvbox-inspired signals. */
+  --color-marigold: #fabd2f;
+  --color-tomato: #fb4934;
+  --color-tomato-tint: #4a2423;
+  --color-lagoon: #8ec07c;
+  --color-lagoon-tint: #263c35;
+
+  /* The player cabinet is one step darker than the room. */
+  --color-stage: #111313;
+  --color-stage2: #1b1d1e;
+  --color-stage3: #3c3836;
+  --color-stage-ink: #fbf1c7;
+  --color-stage-ink2: #bdae93;
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Space Grotesk", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  --animate-bob: bob 3.4s ease-in-out infinite;
+  --animate-spin-slow: spin 8s linear infinite;
+  --animate-drift: drift 8s linear infinite;
+  --animate-blink: blink 1.4s steps(1, end) infinite;
 }
 
+/* ---- Keyframes ------------------------------------------- */
 @keyframes eq-bounce {
   0%,
   100% {
-    transform: scaleY(0.35);
+    transform: scaleY(0.3);
   }
   50% {
     transform: scaleY(1);
   }
 }
-@keyframes float {
+@keyframes bob {
   0%,
   100% {
-    transform: translateY(0);
+    transform: translateY(0) rotate(-0.6deg);
   }
   50% {
-    transform: translateY(-12px);
+    transform: translateY(-10px) rotate(0.6deg);
   }
 }
-@keyframes note-rise {
+@keyframes drift {
   0% {
-    transform: translateY(20px) rotate(0deg);
+    transform: translateY(16px) rotate(-8deg);
     opacity: 0;
   }
-  15% {
-    opacity: 0.7;
-  }
-  85% {
-    opacity: 0.7;
+  18%,
+  78% {
+    opacity: 1;
   }
   100% {
-    transform: translateY(-90px) rotate(18deg);
+    transform: translateY(-84px) rotate(14deg);
     opacity: 0;
+  }
+}
+@keyframes blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0.25;
+  }
+}
+@keyframes vu-pulse {
+  0%,
+  100% {
+    transform: scaleY(0.68);
+  }
+  50% {
+    transform: scaleY(1);
   }
 }
 
-/* Accent gradient as a reusable utility. */
-@utility bg-accent {
-  background-image: linear-gradient(135deg, var(--color-amber), var(--color-coral));
+/* ---- Utilities the component layer builds on -------------- */
+
+/* The halftone screen. Sits on a pseudo-element so the dots never
+   tint the content painted over them. */
+@utility halftone {
+  background-image: radial-gradient(var(--color-ink) 1.05px, transparent 1.15px);
+  background-size: 9px 9px;
 }
-@utility text-gradient {
-  background-image: linear-gradient(135deg, var(--color-amber), var(--color-coral));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+
+/* Five-line staff, used behind headings that introduce a running
+   order — the queue, mostly. Sized to draw exactly five lines. */
+@utility staff {
+  height: 17px;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--color-ink) 26%, transparent) 0 1px,
+    transparent 1px 4px
+  );
+}
+
+@utility bg-accent {
+  background-image: linear-gradient(
+    135deg,
+    var(--color-marigold),
+    var(--color-tomato)
+  );
 }
 
 @layer base {
@@ -81,158 +133,914 @@
     height: 100%;
   }
   body {
-    @apply bg-bg font-sans text-ink;
+    @apply bg-paper font-sans text-ink;
     margin: 0;
     line-height: 1.5;
+    font-weight: 500;
+    overflow-x: clip;
     -webkit-font-smoothing: antialiased;
   }
+  /* The printed texture. One fixed layer for the whole app, sitting
+     under the UI so the dots never tint what's painted on top. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0.045;
+    background-image: radial-gradient(var(--color-ink) 1.05px, transparent 1.15px);
+    background-size: 9px 9px;
+  }
+  #root {
+    position: relative;
+    z-index: 1;
+    min-height: 100dvh;
+  }
+  ::selection {
+    color: var(--color-ink);
+    background: var(--color-marigold);
+  }
+  /* One focus treatment everywhere: a lagoon outline reads clearly on
+     paper and inside the ink cabinet alike. */
   :focus-visible {
-    outline: none;
-    box-shadow: 0 0 0 3px rgba(255, 141, 92, 0.35);
-    border-radius: 10px;
+    outline: 2px solid var(--color-lagoon);
+    outline-offset: 2px;
+    border-radius: 6px;
   }
 }
 
 @layer components {
-  /* ---- Primitives ---------------------------------------- */
+  .home-shell {
+    isolation: isolate;
+    background-color: var(--color-paper);
+  }
+  .home-shell::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background-image: url("/assets/landing-console.webp");
+    background-position: center;
+    background-size: cover;
+    background-repeat: no-repeat;
+    opacity: 0.62;
+  }
+
+  /* ---- Console surfaces ---------------------------------------
+     Fine edges keep the dark UI readable; a hard lower shelf plus a
+     soft ambient shadow provides depth without heavy outlines. */
+  .card {
+    @apply rounded-lg border border-ink bg-card p-5;
+    border-color: color-mix(in srgb, var(--color-ink) 58%, transparent);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.055),
+      0 4px 0 var(--color-shadow),
+      0 12px 24px rgb(0 0 0 / 0.26);
+  }
+  .card-flat {
+    @apply rounded-lg border border-ink bg-card p-4;
+    border-color: color-mix(in srgb, var(--color-ink) 58%, transparent);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.05),
+      0 3px 0 var(--color-shadow),
+      0 9px 18px rgb(0 0 0 / 0.2);
+  }
+  /* A tilted sticker, for things placed by hand rather than laid out. */
+  .tilt {
+    transform: rotate(-1.4deg);
+  }
+  .tilt-r {
+    transform: rotate(1.2deg);
+  }
+
+  /* ---- Buttons: they physically depress ------------------- */
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-[10px] border
-      border-line bg-surface2 px-[1.1rem] py-[0.62rem] text-[0.92rem] font-medium
-      text-ink transition-[transform,background-color,border-color] duration-150;
+    @apply inline-flex cursor-pointer items-center justify-center gap-2
+      rounded-full border border-ink bg-card px-[1.15rem] py-[0.55rem]
+      text-[0.92rem] font-bold text-ink;
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.06),
+      0 3px 0 var(--color-shadow),
+      0 7px 14px rgb(0 0 0 / 0.22);
+    transition:
+      transform 0.11s ease,
+      box-shadow 0.11s ease,
+      background-color 0.15s ease;
   }
   .btn:hover:not(:disabled) {
-    @apply -translate-y-px bg-surface3;
+    transform: translateY(-1px);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.07),
+      0 4px 0 var(--color-shadow),
+      0 10px 18px rgb(0 0 0 / 0.25);
+  }
+  .btn:active:not(:disabled) {
+    transform: translateY(2px);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.04),
+      0 1px 0 var(--color-shadow);
   }
   .btn:disabled {
-    @apply cursor-not-allowed opacity-45;
+    @apply cursor-not-allowed opacity-55;
+    box-shadow: 0 2px 0 var(--color-shadow);
   }
   .btn-primary {
-    @apply border-transparent bg-accent font-semibold text-[#1a1206]
-      hover:brightness-105;
+    @apply bg-marigold text-accent-ink;
+  }
+  .btn-go {
+    @apply bg-lagoon text-paper;
   }
   .btn-ghost {
-    @apply bg-transparent;
+    @apply bg-paper2;
   }
   .btn-lg {
-    @apply px-6 py-[0.9rem] text-base;
+    @apply px-7 py-[0.8rem] text-[1.05rem];
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.1),
+      0 5px 0 var(--color-shadow),
+      0 12px 22px rgb(0 0 0 / 0.25);
+  }
+  .btn-lg:hover:not(:disabled) {
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.12),
+      0 6px 0 var(--color-shadow),
+      0 15px 26px rgb(0 0 0 / 0.28);
+  }
+  /* Round transport buttons — the knobs on the cabinet. */
+  .knob {
+    @apply grid cursor-pointer place-items-center rounded-full border
+      border-ink bg-marigold text-accent-ink;
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.18),
+      0 3px 0 var(--color-shadow),
+      0 8px 14px rgb(0 0 0 / 0.28);
+    transition:
+      transform 0.11s ease,
+      box-shadow 0.11s ease;
+  }
+  .knob:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.2),
+      0 4px 0 var(--color-shadow),
+      0 10px 18px rgb(0 0 0 / 0.3);
+  }
+  .knob:active:not(:disabled) {
+    transform: translateY(2px);
+    box-shadow: 0 1px 0 var(--color-shadow);
+  }
+  .knob:disabled {
+    @apply cursor-not-allowed opacity-55;
+  }
+  /* Controls that live on the dark cabinet cast a paper-coloured shadow. */
+  .on-stage.btn,
+  .on-stage.knob {
+    @apply border-stage-ink text-stage-ink;
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.09),
+      0 3px 0 var(--color-shadow),
+      0 8px 14px rgb(0 0 0 / 0.28);
+  }
+  .on-stage.btn:hover:not(:disabled),
+  .on-stage.knob:hover:not(:disabled) {
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.11),
+      0 4px 0 var(--color-shadow),
+      0 10px 18px rgb(0 0 0 / 0.3);
+  }
+  .on-stage.btn:active:not(:disabled),
+  .on-stage.knob:active:not(:disabled) {
+    box-shadow: 0 1px 0 var(--color-shadow);
+  }
+  .on-stage.btn {
+    @apply bg-stage2;
+  }
+  .on-stage.knob {
+    @apply bg-marigold text-accent-ink;
   }
 
+  /* ---- Fields -------------------------------------------- */
   .input {
-    @apply w-full rounded-[10px] border border-line bg-bg2 px-[0.85rem]
-      py-[0.68rem] text-[0.95rem] text-ink transition-colors
-      placeholder:text-muted2 focus:border-amber focus:outline-none;
+    @apply w-full rounded-lg border border-ink bg-card px-[0.9rem]
+      py-[0.6rem] text-[0.95rem] font-bold text-ink
+      placeholder:font-semibold placeholder:text-ink3;
+    border-color: color-mix(in srgb, var(--color-ink) 62%, transparent);
+    box-shadow:
+      inset 0 2px 5px rgb(0 0 0 / 0.32),
+      0 1px 0 rgb(255 255 255 / 0.035);
+    transition: box-shadow 0.15s ease;
+  }
+  .input:focus {
+    box-shadow:
+      inset 0 1px 2px rgb(0 0 0 / 0.2),
+      0 0 0 1px color-mix(in srgb, var(--color-lagoon) 45%, transparent);
   }
   .input-mono {
-    @apply font-mono text-[0.82rem] text-muted;
+    @apply font-mono font-bold;
   }
 
-  .card {
-    @apply rounded-[14px] border border-line bg-surface p-[1.1rem];
+  /* ---- Small parts --------------------------------------- */
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-ink
+      bg-paper2 px-[0.6rem] py-[0.18rem] font-mono text-[0.72rem] font-semibold
+      text-ink;
+    border-color: color-mix(in srgb, var(--color-ink) 62%, transparent);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.045);
+  }
+  .chip-stage {
+    @apply border-stage-ink bg-stage2 text-stage-ink;
   }
 
-  .pill {
-    @apply rounded-full border border-line bg-surface2 px-[0.6rem] py-[0.25rem]
-      font-mono text-[0.75rem] text-muted;
+  /* Errors and empties speak in a bubble — the one cartoon device
+     that also does a job: it marks the message as *the app talking*. */
+  .bubble {
+    @apply relative rounded-lg border border-ink px-[0.9rem]
+      py-[0.6rem] text-[0.88rem] font-bold text-ink;
+    background: var(--color-tomato-tint);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.045),
+      0 3px 0 var(--color-shadow),
+      0 8px 18px rgb(0 0 0 / 0.24);
   }
-
-  .alert {
-    @apply rounded-[10px] border border-coral/30 bg-coral/10 px-[0.8rem]
-      py-[0.6rem] text-[0.88rem] text-[#ffd0d0];
+  .bubble::before,
+  .bubble::after {
+    content: "";
+    position: absolute;
+    left: 20px;
+    width: 0;
+    height: 0;
+    border-style: solid;
+  }
+  .bubble::before {
+    top: -14px;
+    border-width: 0 8px 14px 8px;
+    border-color: transparent transparent var(--color-ink) transparent;
+  }
+  .bubble::after {
+    top: -10px;
+    left: 23px;
+    border-width: 0 5px 10px 5px;
+    border-color: transparent transparent var(--color-tomato-tint) transparent;
   }
 
   /* ---- Type treatments ----------------------------------- */
   .display {
-    @apply m-0 font-display font-extrabold tracking-[-0.03em];
-    font-size: clamp(2.8rem, 8vw, 5.2rem);
-    line-height: 0.98;
+    @apply m-0 font-display font-bold;
+    font-size: 5.2rem;
+    line-height: 0.96;
+    letter-spacing: 0;
   }
   .display-sm {
-    font-size: clamp(1.5rem, 4vw, 2rem);
-    line-height: 1.05;
+    font-size: 2.3rem;
+    line-height: 1.02;
+  }
+  /* Poster lettering: the headline printed twice, marigold under ink. */
+  .display-pop {
+    text-shadow: none;
+  }
+  .label {
+    @apply m-0 font-sans text-[0.72rem] font-bold uppercase
+      text-ink2;
   }
   .eyebrow {
-    @apply m-0 font-mono text-[0.72rem] uppercase tracking-[0.24em] text-amber;
+    @apply m-0 font-mono text-[0.72rem] font-semibold uppercase text-marigold;
   }
   .lede {
-    @apply m-0 max-w-[34ch] text-muted;
-    font-size: clamp(1rem, 2.2vw, 1.18rem);
+    @apply m-0 max-w-[34ch] font-semibold text-ink2;
+    font-size: 1.2rem;
   }
   .wordmark {
-    @apply font-display text-[1.35rem] font-bold tracking-[-0.02em];
+    @apply font-display text-[1.3rem] font-bold;
+  }
+  .heading {
+    @apply m-0 font-display text-[1.05rem] font-bold;
+  }
+  .status-copy {
+    @apply font-mono text-[0.78rem] font-bold uppercase text-ink3;
   }
 
   /* ---- Equalizer mark (signature) ------------------------ */
   .eq {
-    @apply inline-flex items-end gap-[2px];
+    @apply inline-flex items-end;
+    gap: var(--gap, 3px);
   }
   .eq__bar {
-    @apply min-w-[2px] flex-1 rounded bg-accent;
+    @apply shrink-0 rounded-[3px] border-ink;
+    border-width: var(--bd, 2px);
+    width: var(--bw, 5px);
     height: calc(var(--h) * 100%);
+    background: var(--c, var(--color-marigold));
     transform-origin: bottom;
-    transition: height 0.2s ease;
+  }
+  .eq--stage .eq__bar {
+    @apply border-stage-ink;
+  }
+  .wordmark-badge .eq__bar {
+    border-color: var(--color-accent-ink);
   }
   .eq--playing .eq__bar {
-    animation: eq-bounce 0.9s ease-in-out infinite;
-    animation-delay: calc(var(--i) * -0.14s);
+    animation: eq-bounce 0.85s ease-in-out infinite;
+    animation-delay: calc(var(--i) * -0.13s);
   }
 
-  /* ---- Gradient range scrubber --------------------------- */
+  /* ---- Scrubber: an ink-outlined tape slider --------------
+     The paper and cabinet variants only swap these four custom
+     properties — the gradient and thumb are declared once, so there
+     are no competing `background` rules to order-fight over. */
   .scrub {
     -webkit-appearance: none;
     appearance: none;
-    @apply h-[6px] flex-1 rounded-full;
+    --track: var(--color-paper3);
+    --edge: var(--color-ink);
+    --thumb-fill: var(--color-card);
+    @apply h-[14px] flex-1 cursor-pointer rounded-full;
+    border: 1px solid var(--edge);
     background: linear-gradient(
       to right,
-      var(--color-amber),
-      var(--color-coral) var(--pct, 0%),
-      var(--color-surface3) var(--pct, 0%)
+      var(--color-marigold),
+      var(--color-tomato) var(--pct, 0%),
+      var(--track) var(--pct, 0%)
     );
   }
   .scrub::-webkit-slider-thumb {
     -webkit-appearance: none;
-    width: 15px;
-    height: 15px;
+    width: 18px;
+    height: 18px;
     border-radius: 50%;
-    background: #fff;
-    border: 2px solid var(--color-coral);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+    background: var(--thumb-fill);
+    border: 1px solid var(--edge);
+    box-shadow: 0 2px 0 var(--color-shadow);
+    cursor: grab;
   }
   .scrub::-moz-range-thumb {
-    width: 15px;
-    height: 15px;
+    width: 18px;
+    height: 18px;
     border-radius: 50%;
-    background: #fff;
-    border: 2px solid var(--color-coral);
+    background: var(--thumb-fill);
+    border: 1px solid var(--edge);
+    box-shadow: 0 2px 0 var(--color-shadow);
+    cursor: grab;
+  }
+  .scrub::-moz-range-track {
+    background: transparent;
   }
   .scrub:disabled {
-    @apply opacity-50;
+    @apply cursor-not-allowed opacity-45;
+  }
+  /* On the cabinet the same slider is outlined in paper, not ink. */
+  .scrub-stage {
+    --track: var(--color-stage3);
+    --edge: var(--color-stage-ink);
+    --thumb-fill: var(--color-stage-ink);
   }
 
-  /* ---- Home hero visual: spinning vinyl + floating notes -- */
-  .vinyl {
-    background:
-      radial-gradient(circle at 50% 50%, #2a2d36 0 14%, transparent 14.5%),
-      repeating-radial-gradient(
-        circle at 50% 50%,
-        #0e0f13 0 2px,
-        #17181e 2px 4px
-      );
+  /* ---- Room atmosphere ----------------------------------- */
+  .room-shell {
+    background-color: var(--color-paper);
   }
-  .vinyl::after {
+  .room-atmosphere {
+    @apply pointer-events-none fixed inset-0 z-0 overflow-hidden;
+    opacity: 0.46;
+  }
+  .room-atmosphere__canvas {
+    @apply block h-full w-full;
+  }
+
+  /* ---- The cabinet: the app's one dark object ------------- */
+  .cabinet {
+    @apply relative rounded-2xl border border-ink bg-stage;
+    border-color: color-mix(in srgb, var(--color-stage-ink) 68%, transparent);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.055),
+      0 6px 0 var(--color-shadow),
+      0 20px 42px rgb(0 0 0 / 0.38);
+  }
+  .cabinet::before,
+  .cabinet::after {
     content: "";
     position: absolute;
-    inset: 39%;
+    z-index: 2;
+    top: 9px;
+    width: 8px;
+    height: 8px;
+    border: 1px solid color-mix(in srgb, var(--color-stage-ink) 45%, transparent);
     border-radius: 50%;
-    background: linear-gradient(135deg, var(--color-amber), var(--color-coral));
+    background: var(--color-stage3);
+    box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.65);
+  }
+  .cabinet::before {
+    left: 10px;
+  }
+  .cabinet::after {
+    right: 10px;
+  }
+
+  .deck-topline {
+    @apply font-mono text-[0.58rem] font-semibold uppercase text-stage-ink2;
+  }
+
+  .player-screen {
+    box-shadow:
+      inset 0 0 0 4px rgb(0 0 0 / 0.42),
+      inset 0 0 30px rgb(0 0 0 / 0.56),
+      0 3px 0 var(--color-shadow);
+  }
+  .player-screen::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    pointer-events: none;
+    opacity: 0.12;
+    background-image: repeating-linear-gradient(
+      to bottom,
+      transparent 0 3px,
+      rgb(235 219 178 / 0.18) 3px 4px
+    );
+  }
+
+  .deck-nameplate {
+    box-shadow:
+      inset 0 2px 6px rgb(0 0 0 / 0.38),
+      0 1px 0 rgb(255 255 255 / 0.035);
+  }
+  .deck-lamp {
+    width: 10px;
+    height: 10px;
+    flex: none;
+    border: 1px solid var(--color-stage-ink2);
+    border-radius: 50%;
+    background: var(--color-paper3);
+    box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.7);
+  }
+  .deck-lamp[data-active="true"] {
+    background: var(--color-lagoon);
+    box-shadow:
+      0 0 0 3px rgb(142 192 124 / 0.12),
+      0 0 12px rgb(142 192 124 / 0.55);
+  }
+
+  .vu-meter {
+    @apply flex h-9 min-w-[72px] max-w-[180px] flex-1 items-end gap-[3px]
+      rounded-md border border-stage-ink bg-stage2 px-2 py-1.5;
+    cursor: ew-resize;
+    touch-action: none;
+    user-select: none;
+    border-color: color-mix(
+      in srgb,
+      var(--color-stage-ink) 56%,
+      transparent
+    );
+    box-shadow:
+      inset 0 2px 6px rgb(0 0 0 / 0.48),
+      0 1px 0 rgb(255 255 255 / 0.035);
+    transition:
+      border-color 0.15s ease,
+      box-shadow 0.15s ease;
+  }
+  .vu-meter:hover,
+  .vu-meter:focus-visible {
+    border-color: var(--color-lagoon);
+    box-shadow:
+      inset 0 2px 6px rgb(0 0 0 / 0.48),
+      0 0 0 2px rgb(142 192 124 / 0.15);
+  }
+  .vu-meter__bar {
+    min-width: 3px;
+    flex: 1;
+    border-radius: 1px 1px 0 0;
+    background: var(--color-stage3);
+    transition:
+      height 0.18s ease,
+      background-color 0.18s ease;
+  }
+  .vu-meter__bar[data-on="true"] {
+    background: var(--color-lagoon);
+  }
+  .vu-meter__bar[data-on="true"][data-hot="true"] {
+    background: var(--color-tomato);
+  }
+  .vu-meter[data-playing="true"] .vu-meter__bar[data-on="true"] {
+    transform-origin: bottom;
+    animation: vu-pulse 0.72s ease-in-out infinite;
+  }
+  .vu-meter[data-playing="true"] .vu-meter__bar:nth-child(2n) {
+    animation-delay: -0.28s;
+  }
+  .vu-meter[data-playing="true"] .vu-meter__bar:nth-child(3n) {
+    animation-delay: -0.5s;
+  }
+
+  /* Queue and search rows are individual tape cartridges. */
+  .cassette-stack {
+    counter-reset: tape;
+  }
+  .cassette-row,
+  .cassette-result {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid color-mix(in srgb, var(--color-ink) 42%, transparent);
+    border-radius: 6px;
+    background:
+      linear-gradient(
+        to bottom,
+        rgb(255 255 255 / 0.025),
+        transparent 34%
+      ),
+      color-mix(in srgb, var(--color-paper2) 72%, var(--color-card));
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.045),
+      inset 0 -2px 0 rgb(0 0 0 / 0.2),
+      0 2px 0 var(--color-shadow);
+  }
+  .cassette-row::after,
+  .cassette-result::after {
+    content: "";
+    position: absolute;
+    inset: 4px;
+    pointer-events: none;
+    border-top: 1px solid rgb(235 219 178 / 0.05);
+    border-bottom: 1px solid rgb(0 0 0 / 0.18);
+  }
+  .cassette-row--on-deck {
+    border-color: color-mix(
+      in srgb,
+      var(--color-marigold) 68%,
+      transparent
+    );
+    background:
+      linear-gradient(
+        110deg,
+        rgb(250 189 47 / 0.1),
+        transparent 52%
+      ),
+      var(--color-paper2);
+  }
+  .cassette-index {
+    position: relative;
+    z-index: 1;
+    border: 1px solid var(--color-accent-ink);
+    border-radius: 4px;
+    color: var(--color-accent-ink);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.25),
+      0 2px 0 var(--color-shadow);
+  }
+  .cassette-art {
+    position: relative;
+    z-index: 1;
+    overflow: hidden;
+    border: 1px solid color-mix(in srgb, var(--color-ink) 58%, transparent);
+    border-radius: 4px;
+    background: var(--color-stage);
+    box-shadow:
+      inset 0 0 0 2px rgb(0 0 0 / 0.25),
+      0 1px 0 rgb(255 255 255 / 0.04);
+  }
+  .cassette-art::after {
+    content: "";
+    position: absolute;
+    right: 4px;
+    bottom: 3px;
+    left: 4px;
+    height: 4px;
+    pointer-events: none;
+    border-radius: 999px;
+    background:
+      radial-gradient(circle at 4px 50%, var(--color-stage) 0 2px, transparent 2.5px),
+      radial-gradient(circle at calc(100% - 4px) 50%, var(--color-stage) 0 2px, transparent 2.5px),
+      rgb(235 219 178 / 0.62);
+  }
+  .cassette-result > *,
+  .cassette-row > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  /* A speaker grille, drawn as a halftone of large dots. */
+  .grille {
+    background-image: radial-gradient(
+      var(--color-stage3) 2.6px,
+      transparent 2.8px
+    );
+    background-size: 9px 9px;
+  }
+
+  /* ---- Ticket stub: how the room code gets handed over ---- */
+  .stub {
+    @apply relative rounded-lg border border-ink bg-marigold;
+    color: var(--color-accent-ink);
+    border-color: var(--color-accent-ink);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.2),
+      0 4px 0 color-mix(in srgb, var(--color-marigold) 45%, black),
+      0 12px 24px rgb(0 0 0 / 0.3);
+  }
+  .stub .label,
+  .stub .text-ink,
+  .stub .text-ink2 {
+    color: var(--color-accent-ink);
+  }
+  .stub .stub__perf {
+    border-color: var(--color-accent-ink);
+  }
+  .stub .btn {
+    color: var(--color-ink);
+    border-color: var(--color-ink);
+    background: var(--color-card);
+  }
+  /* Notches punched at the fold, so it reads as something torn off. They
+     straddle the card's top and bottom edges, so the stub must not clip. */
+  .stub__perf {
+    @apply relative border-l-2 border-dashed border-ink;
+  }
+  .stub__perf::before,
+  .stub__perf::after {
+    content: "";
+    position: absolute;
+    left: -12px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--color-paper);
+    border: 1px solid var(--color-ink);
+  }
+  .stub__perf::before {
+    top: -12px;
+  }
+  .stub__perf::after {
+    bottom: -12px;
+  }
+
+  /* ---- Tabletop cassette deck on the landing page -------- */
+  .preview-deck {
+    position: relative;
+    padding: 1.2rem;
+    border: 1px solid color-mix(in srgb, var(--color-stage-ink) 65%, transparent);
+    border-radius: 10px;
+    color: var(--color-stage-ink);
+    background:
+      linear-gradient(to bottom, rgb(255 255 255 / 0.05), transparent 15%),
+      var(--color-stage);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.07),
+      inset 0 -5px 0 rgb(0 0 0 / 0.28),
+      0 8px 0 var(--color-shadow),
+      0 28px 55px rgb(0 0 0 / 0.46);
+  }
+  .preview-deck::before,
+  .preview-deck::after {
+    content: "";
+    position: absolute;
+    top: 10px;
+    width: 7px;
+    height: 7px;
+    border: 1px solid var(--color-stage-ink2);
+    border-radius: 50%;
+    background: var(--color-stage3);
+    box-shadow: inset 0 1px 2px black;
+  }
+  .preview-deck::before {
+    left: 10px;
+  }
+  .preview-deck::after {
+    right: 10px;
+  }
+  .preview-deck__handle {
+    position: absolute;
+    right: 21%;
+    bottom: calc(100% - 2px);
+    left: 21%;
+    height: 20px;
+    border: 5px solid var(--color-stage3);
+    border-bottom: 0;
+    border-radius: 10px 10px 0 0;
+    box-shadow: 0 -1px 0 var(--color-stage-ink2);
+  }
+  .preview-deck__lamp {
+    width: 9px;
+    height: 9px;
+    flex: none;
+    border: 1px solid var(--color-stage-ink);
+    border-radius: 50%;
+    background: var(--color-tomato);
+    box-shadow: 0 0 12px rgb(251 73 52 / 0.6);
+  }
+  .preview-tape {
+    position: relative;
+    padding: 0.85rem 1rem 0.95rem;
+    border: 1px solid var(--color-accent-ink);
+    border-radius: 7px 7px 12px 12px;
+    color: var(--color-accent-ink);
+    background: var(--color-marigold);
+    box-shadow:
+      inset 0 2px 0 rgb(255 255 255 / 0.22),
+      inset 0 -4px 0 rgb(0 0 0 / 0.18),
+      0 3px 0 var(--color-shadow);
+  }
+  .preview-tape::before,
+  .preview-tape::after {
+    content: "";
+    position: absolute;
+    bottom: 7px;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--color-accent-ink);
+  }
+  .preview-tape::before {
+    left: 10px;
+  }
+  .preview-tape::after {
+    right: 10px;
+  }
+  .preview-tape__window {
+    display: grid;
+    grid-template-columns: 50px minmax(0, 1fr) 50px;
+    align-items: center;
+    gap: 0.6rem;
+    min-height: 66px;
+    padding: 0.55rem 0.8rem;
+    border: 1px solid var(--color-accent-ink);
+    border-radius: 5px;
+    background: var(--color-paper2);
+    box-shadow: inset 0 3px 8px rgb(0 0 0 / 0.48);
+  }
+  .preview-tape__reel {
+    display: grid;
+    width: 48px;
+    height: 48px;
+    place-items: center;
+    border: 5px dashed var(--color-stage-ink2);
+    border-radius: 50%;
+    background: var(--color-stage);
+  }
+  .preview-tape__reel i {
+    width: 13px;
+    height: 13px;
+    border: 2px solid var(--color-stage-ink2);
+    border-radius: 50%;
+  }
+  .preview-tape__tape {
+    min-width: 0;
+    overflow: hidden;
+    text-align: center;
+    font-family: var(--font-mono);
+    font-size: 0.66rem;
+    font-weight: 700;
+    color: var(--color-stage-ink);
+  }
+  .preview-display {
+    min-height: 50px;
+    padding: 0.55rem 0.65rem;
+    border: 1px solid color-mix(in srgb, var(--color-lagoon) 70%, transparent);
+    border-radius: 4px;
+    background: #0c1713;
+    color: var(--color-lagoon);
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    font-weight: 700;
+    box-shadow:
+      inset 0 3px 8px rgb(0 0 0 / 0.6),
+      0 1px 0 rgb(255 255 255 / 0.035);
+  }
+  .preview-display__bar {
+    min-width: 4px;
+    flex: 1;
+    border-radius: 1px 1px 0 0;
+    background: var(--color-lagoon);
+    box-shadow: 0 0 5px rgb(142 192 124 / 0.36);
+  }
+  .preview-display__bar--hot {
+    background: var(--color-tomato);
+    box-shadow: 0 0 5px rgb(251 73 52 / 0.36);
+  }
+  .preview-transport {
+    display: grid;
+    height: 26px;
+    min-width: 30px;
+    place-items: center;
+    padding-inline: 0.35rem;
+    border: 1px solid var(--color-stage-ink2);
+    border-radius: 3px;
+    background: var(--color-stage3);
+    color: var(--color-stage-ink);
+    font-size: 0.58rem;
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.06),
+      0 2px 0 var(--color-shadow);
+  }
+  .preview-transport--active {
+    border-color: var(--color-marigold);
+    background: var(--color-marigold);
+    color: var(--color-accent-ink);
+  }
+  .preview-slot {
+    position: relative;
+    display: flex;
+    min-height: 46px;
+    align-items: center;
+    gap: 0.75rem;
+    overflow: hidden;
+    padding: 0.45rem 0.6rem;
+    border: 1px solid color-mix(in srgb, var(--color-stage-ink) 42%, transparent);
+    border-radius: 4px;
+    background: var(--color-stage2);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.04),
+      0 2px 0 var(--color-shadow);
+  }
+  .preview-slot__index {
+    display: grid;
+    width: 31px;
+    height: 27px;
+    flex: none;
+    place-items: center;
+    border: 1px solid var(--color-accent-ink);
+    border-radius: 3px;
+    background: var(--color-lagoon);
+    color: var(--color-accent-ink);
+    font-family: var(--font-mono);
+    font-size: 0.58rem;
+    font-weight: 700;
+  }
+  .preview-slot__reel {
+    display: flex;
+    width: 33px;
+    flex: none;
+    justify-content: space-between;
+    padding: 4px;
+    border: 1px solid var(--color-stage-ink2);
+    border-radius: 999px;
+    background: var(--color-stage3);
+  }
+  .preview-slot__reel i {
+    width: 7px;
+    height: 7px;
+    border: 1px dashed var(--color-stage-ink);
+    border-radius: 50%;
+    background: var(--color-stage);
+  }
+
+  /* Kept for the join and room surfaces that use the record texture. */
+  .vinyl {
+    background:
+      radial-gradient(circle at 50% 50%, var(--color-marigold) 0 21%, transparent 21.5%),
+      repeating-radial-gradient(
+        circle at 50% 50%,
+        var(--color-stage) 0 2.5px,
+        var(--color-stage2) 2.5px 5px
+      );
   }
   .note {
-    animation: note-rise 7s linear infinite;
+    animation: drift 8s linear infinite;
+  }
+
+  .result-scroll {
+    scrollbar-color: var(--color-ink3) transparent;
+    scrollbar-width: thin;
+  }
+  .result-scroll::-webkit-scrollbar {
+    width: 8px;
+  }
+  .result-scroll::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background: var(--color-ink3);
+    background-clip: padding-box;
   }
 
   /* YouTube injects its own iframe into the mount; make it fill the frame. */
   .player-host,
   .player-host iframe {
     @apply absolute inset-0 h-full w-full border-0;
+  }
+}
+
+@media (max-width: 1023px) {
+  .display {
+    font-size: 4.2rem;
+  }
+}
+
+@media (max-width: 639px) {
+  .home-shell::before {
+    background-position: 63% center;
+    opacity: 0.46;
+  }
+  .display {
+    font-size: 3rem;
+  }
+  .display-sm {
+    font-size: 1.75rem;
+  }
+  .lede {
+    font-size: 1.05rem;
+  }
+  .room-atmosphere {
+    opacity: 0.3;
   }
 }
 
