@@ -36,7 +36,9 @@ async function writeClipboard(value: string) {
  * printed thing, and the tear-off edge carries the actions. The code and the
  * link are the same thing wearing different clothes — read the code down a
  * phone line, or send the link and let it do the typing. Both land on
- * `/r/:code`, which joins and forwards.
+ * `/r/:code`, which joins and forwards. Legacy `room_...` identifiers use the
+ * same ticket as a room key so older backend deployments do not lose the
+ * primary invite UI.
  */
 export function SharePanel({ roomID }: Props) {
   const [copied, setCopied] = useState<Copied>(null);
@@ -54,7 +56,11 @@ export function SharePanel({ roomID }: Props) {
       setCopied(what);
       setTimeout(() => setCopied(null), 1800);
     } catch {
-      setError("Copy isn't available in this browser. You can type the room code instead.");
+      setError(
+        `Copy isn't available in this browser. You can type the room ${
+          showCode ? "code" : "key"
+        } instead.`,
+      );
     }
   }
 
@@ -62,9 +68,7 @@ export function SharePanel({ roomID }: Props) {
     try {
       await navigator.share({
         title: "SongSpot",
-        text: showCode
-          ? `Join my SongSpot room — code ${roomID}`
-          : "Join my SongSpot room",
+        text: `Join my SongSpot room — ${showCode ? "code" : "key"} ${roomID}`,
         url: link,
       });
     } catch (e) {
@@ -76,41 +80,10 @@ export function SharePanel({ roomID }: Props) {
 
   const copiedMessage =
     copied === "code"
-      ? "Room code copied"
+      ? `Room ${showCode ? "code" : "key"} copied`
       : copied === "link"
         ? "Invite link copied"
         : "";
-
-  // Rooms created before short codes existed only have a link to give out.
-  if (!showCode) {
-    return (
-      <section className="card" aria-labelledby="share-heading">
-        <h2 className="label mb-2" id="share-heading">
-          Invite the room
-        </h2>
-        <div className="flex gap-2">
-          <input
-            className="input input-mono min-w-0 flex-1 !text-[0.8rem]"
-            readOnly
-            value={link}
-            aria-label="Invite link"
-            onFocus={(e) => e.currentTarget.select()}
-          />
-          <button className="btn shrink-0" onClick={() => copy(link, "link")}>
-            {copied === "link" ? "Copied" : "Copy"}
-          </button>
-        </div>
-        <span className="sr-only" role="status" aria-live="polite">
-          {copiedMessage}
-        </span>
-        {error && (
-          <p className="bubble mt-3" role="alert">
-            {error}
-          </p>
-        )}
-      </section>
-    );
-  }
 
   return (
     <div>
@@ -121,13 +94,19 @@ export function SharePanel({ roomID }: Props) {
       >
         <div className="min-w-0 flex-1 p-4">
           <h2 className="label" id="room-code-heading">
-            Room code
+            {showCode ? "Room code" : "Room key"}
           </h2>
-          <p className="mt-1.5 font-mono text-[1.7rem] font-bold leading-none text-accent-ink sm:text-[2rem]">
+          <p
+            className={`mt-1.5 break-all font-mono font-bold leading-none text-accent-ink ${
+              showCode
+                ? "text-[1.7rem] sm:text-[2rem]"
+                : "text-[1.05rem] sm:text-[1.2rem]"
+            }`}
+          >
             {formatRoomCode(roomID)}
           </p>
           <p className="mt-2.5 text-[0.78rem] font-semibold text-accent-ink/80">
-            Anyone with the code can join and add songs.
+            Anyone with this {showCode ? "code" : "key"} can join and add songs.
           </p>
         </div>
 
@@ -135,9 +114,11 @@ export function SharePanel({ roomID }: Props) {
           <button
             className="btn !px-3 !py-1.5 !text-[0.78rem]"
             onClick={() => copy(roomID, "code")}
-            aria-label="Copy room code"
+            aria-label={`Copy room ${showCode ? "code" : "key"}`}
           >
-            {copied === "code" ? "Copied" : "Copy code"}
+            {copied === "code"
+              ? "Copied"
+              : `Copy ${showCode ? "code" : "key"}`}
           </button>
           <button
             className="btn !px-3 !py-1.5 !text-[0.78rem]"
