@@ -6,14 +6,14 @@ SongSpot has three pieces, each with a free host:
 | --- | --- | --- |
 | **Redis** (state + pub/sub) | [Upstash](https://upstash.com) | Serverless Redis, free tier |
 | **Backend** (Go, WebSockets) | [Render](https://render.com) | Free web service; **sleeps after ~15 min idle** (first request wakes it, ~30–60s) |
-| **Frontend** (static SPA) | [Cloudflare Pages](https://pages.cloudflare.com) or [Vercel](https://vercel.com) | Always-on, instant |
+| **Frontend** (static SPA) | [Vercel](https://vercel.com) | Always-on, instant |
 
 The frontend and backend are hosted separately, so the backend serves **CORS**
 headers and the frontend points at the backend via build-time env vars. All of
 that is already wired up — you just set a few environment variables.
 
 > Alternatives that also work: backend on **Koyeb** or **Fly.io**; frontend on
-> **Netlify**. The steps are the same shape.
+> **Netlify** or any static host. The steps are the same shape.
 
 ---
 
@@ -44,31 +44,32 @@ Keep that URL for step 2.
    `https://songspot-backend.onrender.com`. Check `…/health` returns
    `{"status":"ok"}`.
 
-## 3. Frontend — Cloudflare Pages (or Vercel)
+## 3. Frontend — Vercel
 
-1. **Create project** → connect the same repo.
+1. **Add New → Project** → connect the same repo.
 2. Settings:
    - **Root Directory:** `frontend`
+   - **Framework Preset:** Vite
    - **Build Command:** `pnpm build`
-   - **Build Output Directory:** `dist`
+   - **Output Directory:** `dist`
    - (pnpm is auto-detected from `packageManager` in package.json)
 3. **Environment variables** (point the app at your backend from step 2):
    - `VITE_API_URL` = `https://songspot-backend.onrender.com` (no trailing slash)
    - `VITE_WS_URL` = `wss://songspot-backend.onrender.com/ws`
-4. Deploy. Copy the frontend URL, e.g. `https://songspot.pages.dev`.
+4. Deploy. Copy the frontend URL, e.g. `https://songspot.vercel.app`.
 
-> **SPA routing:** the app uses client-side routes (`/room/:id`, `/join/:token`).
-> Cloudflare Pages handles SPA fallback automatically. On **Vercel**, add a
-> rewrite so deep links work on refresh — create `frontend/vercel.json`:
-> `{ "rewrites": [{ "source": "/(.*)", "destination": "/" }] }`
+> **SPA routing:** the app uses client-side routes (`/room/:id`, `/join/:token`),
+> so the host must serve `index.html` for unknown paths or a refresh on a deep
+> link 404s. `frontend/vercel.json` already does this. On another static host,
+> configure the equivalent single-page-application fallback.
 
 ## 4. Wire the origins (the step everyone forgets)
 
 Back in **Render → your backend → Environment**, set these to your frontend URL
 and redeploy:
 
-- `WS_ALLOWED_ORIGINS` = `https://songspot.pages.dev`
-- `CORS_ORIGIN` = `https://songspot.pages.dev`
+- `WS_ALLOWED_ORIGINS` = `https://songspot.vercel.app`
+- `CORS_ORIGIN` = `https://songspot.vercel.app`
 
 Without this, the browser blocks the API calls (CORS) and the WebSocket refuses
 the connection (origin check). With it, you're live.
