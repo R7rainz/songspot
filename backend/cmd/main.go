@@ -7,23 +7,20 @@ import (
 	"strings"
 
 	"songspot/internal/api"
+	"songspot/internal/redisconn"
+	"songspot/internal/store"
 
 	"github.com/caitlinelfring/go-env-default"
-	"github.com/redis/go-redis/v9"
 )
 
 func main() {
 	redisURL := env.GetDefault("REDIS_URL", "localhost:6380")
 
-	opts, err := redisOptions(redisURL)
+	rdb, err := redisconn.Connect(context.Background(), redisURL)
 	if err != nil {
-		log.Fatalf("Invalid REDIS_URL: %v", err)
-	}
-	rdb := redis.NewClient(opts)
-
-	if err := rdb.Ping(context.Background()).Err(); err != nil {
 		log.Fatalf("Failed to connect to Redis: %v", err)
 	}
+	defer rdb.Close()
 
 	log.Println("Successfully connected to redis")
 
@@ -38,7 +35,7 @@ func main() {
 
 	// Registers the REST routes and the /ws upgrade handler, which share the
 	// room-hub registry.
-	api.SetupRestRoutes(mux, rdb)
+	api.SetupRestRoutes(mux, store.NewRedisStore(rdb))
 
 	port := env.GetDefault("PORT", "8080")
 
@@ -47,16 +44,6 @@ func main() {
 	if err := http.ListenAndServe(":"+port, withCORS(mux)); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
-}
-
-// redisOptions accepts either a full connection URL (redis://…, or rediss://…
-// with TLS + auth, as managed hosts like Upstash provide) or a bare host:port
-// for local development.
-func redisOptions(raw string) (*redis.Options, error) {
-	if strings.Contains(raw, "://") {
-		return redis.ParseURL(raw)
-	}
-	return &redis.Options{Addr: raw}, nil
 }
 
 // withCORS lets a separately-hosted frontend call the REST API. Origins come
