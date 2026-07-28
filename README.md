@@ -32,13 +32,17 @@ skewed clocks still land on the same second.
 ## Repository layout
 
 ```txt
-backend/     Go coordination server, Redis state, YouTube metadata lookup
-frontend/    React + TypeScript SPA (Vite)
-DEPLOY.md    Step-by-step production deployment guide
+backend/         Go coordination server, Redis state, YouTube metadata lookup
+frontend/        React + TypeScript SPA (Vite)
+ARCHITECTURE.md  System design, sync model, concurrency model, known limits
+DEPLOY.md        Step-by-step production deployment guide
 ```
 
-Each half has its own detailed documentation:
+Further documentation:
 
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) — how the pieces fit together and why:
+  the playhead anchor pair, clock-offset estimation, echo suppression, hub
+  lifecycle, and the constraints of the current design
 - [`backend/README.md`](backend/README.md) — full REST and WebSocket API
   reference, data models, Redis keys, engineering notes
 - [`backend/agent.md`](backend/agent.md) — backend working notes
