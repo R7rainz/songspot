@@ -81,9 +81,18 @@ backend/
     main.go                  # server entrypoint
   internal/
     api/
-      handlers.go            # REST routes and websocket upgrade handler
+      server.go              # route registration and shared dependencies
+      rooms.go               # create/load/join room handlers
+      invites.go             # legacy invite token handlers
+      queue.go               # queue, batch add, vote, remove, next handlers
+      playback.go            # play-now and playback-control handlers
+      people.go              # participant moderation handlers
+      music_lookup.go        # search and playlist lookup handlers
+      websocket.go           # websocket upgrade handler
+      helpers.go             # shared request/response helpers
     models/
       room.go                # room, song, queue models + playhead maths
+      invite.go              # invite token model
       roomcode.go            # room code generation and normalisation
       roomcode_test.go       # code + playhead tests
       eventSync.go           # websocket event models
@@ -92,9 +101,18 @@ backend/
       innertube.go           # YouTube InnerTube implementation
       innertube_test.go      # parser tests
       testdata/search.json   # fixture for parser tests
+    redisconn/
+      redis.go               # Redis URL parsing and client bootstrap
+    store/
+      redis.go               # Redis keys, room/invite/cache persistence, Pub/Sub
     ws/
-      hub.go                 # hub registry, room hub, Redis Pub/Sub listener
+      registry.go            # room hub lifecycle and ref counting
+      hub.go                 # room hub event loop and client delivery
+      hub_redis.go           # Redis Pub/Sub subscription listener
       client.go              # websocket read/write pumps
+      client_events.go       # incoming websocket event handling
+      origin.go              # websocket origin checks
+      upgrader.go            # websocket upgrader setup
   docker-compose.yml         # local Redis
   go.mod
   go.sum
@@ -850,4 +868,3 @@ curl http://localhost:8080/health
 # Search songs
 curl "http://localhost:8080/search?q=daft%20punk&limit=5"
 ```
-
