@@ -139,4 +139,13 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ userID, everyoneControls }),
     }),
+
+  // Host-only: remove someone from the room. Returns the updated roster, and
+  // the backend publishes a "kicked" event so the removed client stands down.
+  // Nothing stops them rejoining with the code — this ends a session, not access.
+  removeUser: (roomID: string, targetUserID: string, requesterID: string) =>
+    request<string[]>(
+      `/rooms/${roomID}/users/${encodeURIComponent(targetUserID)}?requesterID=${encodeURIComponent(requesterID)}`,
+      { method: "DELETE" },
+    ),
 };

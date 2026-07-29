@@ -11,6 +11,7 @@ import { EqualizerMark } from "../components/EqualizerMark";
 import { NoteField, SpeakerIcon, Wordmark } from "../components/Brand";
 import { AddSong } from "../components/AddSong";
 import { Queue } from "../components/Queue";
+import { People } from "../components/People";
 import { SharePanel } from "../components/SharePanel";
 import { RoomAtmosphere } from "../components/RoomAtmosphere";
 
@@ -62,6 +63,11 @@ function Room({ roomID, userId }: RoomProps) {
   const [roomActionError, setRoomActionError] = useState<string | null>(null);
   const [controlPending, setControlPending] = useState(false);
   const [skipPending, setSkipPending] = useState(false);
+  // Who the host is currently removing, so that row alone shows as pending.
+  const [removingUser, setRemovingUser] = useState<string | null>(null);
+  // Set when the host removes us. Drops the socket rather than leaving it open
+  // behind the goodbye screen, which would keep counting us as a listener.
+  const [kicked, setKicked] = useState(false);
   const [playerReady, setPlayerReady] = useState(false);
   // Set when the browser refuses the autoplay we asked for on join. The room is
   // playing; this listener just hasn't interacted with the page yet.
@@ -156,34 +162,51 @@ function Room({ roomID, userId }: RoomProps) {
     [],
   );
 
-  const { conn, sendPlayback, serverNow } = useRoomSocket(roomID, userId, {
-    onPlayback: applyRemotePlayback,
-    // The server sends the new value with the event, so a vote or an add costs
-    // every listener nothing beyond the message itself.
-    onQueueUpdated: (next) => {
-      if (next) {
-        rememberSongs(next);
-        setQueue(next);
-      } else {
-        void loadRoom();
-      }
+  // Passing a null roomID tears the socket down; that is how being removed
+  // actually disconnects us rather than just changing what's on screen.
+  const { conn, sendPlayback, serverNow } = useRoomSocket(
+    kicked ? null : roomID,
+    userId,
+    {
+      onPlayback: applyRemotePlayback,
+      // The server sends the new value with the event, so a vote or an add costs
+      // every listener nothing beyond the message itself.
+      onQueueUpdated: (next) => {
+        if (next) {
+          rememberSongs(next);
+          setQueue(next);
+        } else {
+          void loadRoom();
+        }
+      },
+      onStateUpdated: (next) => {
+        if (next) setRoom((prev) => (prev ? { ...prev, state: next } : prev));
+        else void loadRoom();
+      },
+      onPresence: setListeners,
+      // Fires for everyone, so this is both "you were removed" and "drop that
+      // row from the roster" depending on who was named.
+      onKicked: (removed) => {
+        if (removed === userId) {
+          clearSession(roomID);
+          setKicked(true);
+          setLoadError("The host removed you from this room.");
+          return;
+        }
+        setRoom((prev) =>
+          prev
+            ? { ...prev, users: prev.users.filter((id) => id !== removed) }
+            : prev,
+        );
+      },
+      // We may have slept through a play, a pause, or three whole songs.
+      onReconnect: () => {
+        loadRoom()
+          .then((data) => syncPlayerToState(data, true))
+          .catch(() => {});
+      },
     },
-    onStateUpdated: (next) => {
-      if (next) setRoom((prev) => (prev ? { ...prev, state: next } : prev));
-      else void loadRoom();
-    },
-    onPresence: setListeners,
-    onKicked: () => {
-      clearSession(roomID);
-      setLoadError("The host removed you from this room.");
-    },
-    // We may have slept through a play, a pause, or three whole songs.
-    onReconnect: () => {
-      loadRoom()
-        .then((data) => syncPlayerToState(data, true))
-        .catch(() => {});
-    },
-  });
+  );
   serverNowRef.current = serverNow;
 
   useEffect(() => {
@@ -381,6 +404,25 @@ function Room({ roomID, userId }: RoomProps) {
       );
     } finally {
       setControlPending(false);
+    }
+  }
+
+  /**
+   * Host-only: remove someone from the room. The server publishes a "kicked"
+   * event, which is what actually ends the target's session — the roster the
+   * call returns is just this client not having to wait for its own broadcast.
+   */
+  async function handleRemoveUser(targetID: string) {
+    if (removingUser || !isHost || targetID === userId) return;
+    setRoomActionError(null);
+    setRemovingUser(targetID);
+    try {
+      const users = await api.removeUser(roomID, targetID, userId);
+      setRoom((prev) => (prev ? { ...prev, users } : prev));
+    } catch (e) {
+      setRoomActionError(actionError(e, "Couldn't remove that person."));
+    } finally {
+      setRemovingUser(null);
     }
   }
 
@@ -765,6 +807,23 @@ function Room({ roomID, userId }: RoomProps) {
                 </p>
               )}
             </section>
+
+            {/* Moderation is the host's job alone, so this card only exists for
+                them. Everyone else has no use for a roster they can't act on. */}
+            {isHost && room && (
+              <section className="card" aria-labelledby="people-heading">
+                <h2 className="label" id="people-heading">
+                  People
+                </h2>
+                <People
+                  users={room.users}
+                  hostID={room.state.hostID}
+                  myUserId={userId}
+                  pendingId={removingUser}
+                  onRemove={(id) => void handleRemoveUser(id)}
+                />
+              </section>
+            )}
           </div>
         </div>
 

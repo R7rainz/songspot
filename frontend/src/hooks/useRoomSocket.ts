@@ -27,8 +27,12 @@ interface Handlers {
   onStateUpdated?: (state?: RoomState) => void;
   /** Live count of people connected to the room. */
   onPresence?: (count: number) => void;
-  /** The host removed us from the room. */
-  onKicked?: () => void;
+  /**
+   * The host removed someone. Fires on every client, not just the target, so
+   * rosters stay in step — the caller compares against its own id to decide
+   * whether it was shown the door or just needs to drop a row.
+   */
+  onKicked?: (userID: string) => void;
   /**
    * The socket (re)opened. On a reconnect we may have slept through play,
    * pause or a whole song, so the room page refetches and realigns here.
@@ -127,9 +131,13 @@ export function useRoomSocket(
           case "presence":
             handlersRef.current.onPresence?.(Number(msg.data.count) || 0);
             break;
-          case "kicked":
-            if (msg.data.userID === userID) handlersRef.current.onKicked?.();
+          case "kicked": {
+            const removed = msg.data.userID;
+            if (typeof removed === "string" && removed) {
+              handlersRef.current.onKicked?.(removed);
+            }
             break;
+          }
         }
       };
 
